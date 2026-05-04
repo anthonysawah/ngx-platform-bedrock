@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 WorkloadType = Literal["insert", "select", "mixed"]
 RunStatus = Literal[
@@ -15,13 +15,18 @@ RunStatus = Literal[
     "timeout",
 ]
 
+# Tables the workload executor is allowed to touch. Anything outside this
+# set is rejected at WorkloadSpec validation, not interpreted at SQL build
+# time. Keeps Bedrock from picking arbitrary table names.
+ALLOWED_TABLE_NAMES: frozenset[str] = frozenset({"workload_orders"})
+
 
 class WorkloadSpec(BaseModel):
     """Validated, typed shape of an intent prompt.
 
     Bedrock returns this. `duration_seconds` is the hard cap; `row_count`
     is a target the executor tries to hit but does not exceed the duration
-    budget for. See DECISIONS.md ADR-006.
+    budget for. See DECISIONS.md ADR-008.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -31,6 +36,15 @@ class WorkloadSpec(BaseModel):
     mix_ratio: float = Field(ge=0.0, le=1.0, default=0.3)
     duration_seconds: int = Field(ge=5, le=60)
     table_name: str
+
+    @field_validator("table_name")
+    @classmethod
+    def _table_name_in_allowlist(cls, v: str) -> str:
+        if v not in ALLOWED_TABLE_NAMES:
+            raise ValueError(
+                f"table_name must be one of {sorted(ALLOWED_TABLE_NAMES)!r}; got {v!r}"
+            )
+        return v
 
 
 class WorkloadRequest(BaseModel):

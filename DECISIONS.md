@@ -230,3 +230,64 @@ elements." The migration:
 
 **v1.5 migration path.** None — the AWS-managed pattern is what the v1.5
 state-on-S3 migration relies on.
+
+---
+
+## ADR-008 — WorkloadSpec semantics, ACU honesty, table allowlist
+
+**Context.** The `WorkloadSpec` schema has fields that look independent
+but interact in ways the model and the executor must agree on. Three
+choices made up front:
+
+1. **`duration_seconds` is a hard cap; `row_count` is a target.** The
+   schema bounds row_count at 1..100,000 and duration_seconds at 5..60.
+   "Insert 100,000 rows in 5 seconds" implies 20k inserts/sec which a
+   single Lambda over psycopg cannot sustain. If the executor honored
+   row_count as a hard count, the user would either get a timeout error
+   or wait far longer than they asked for. Honoring duration as the cap
+   gives a predictable user experience: you ask for X seconds, you get X
+   seconds, and the platform reports how many rows actually landed.
+
+   The intent-parser system prompt makes this explicit and clips
+   unrealistic row_count values to a plausible target. The executor
+   loop in workload.py exits on whichever comes first: target rows
+   reached, or duration elapsed.
+
+2. **`RunRecord` carries `rows_completed` separately from `row_count`.**
+   The user can see the gap between ask and reality. The summary
+   prompt is required to surface that gap when it's material.
+
+3. **`starting_acu` and `peak_acu` are passed to the summary prompt; the
+   summary must narrate ACU behavior honestly.** Aurora Serverless v2
+   doesn't always scale within a 60-second window — small workloads or
+   read-heavy ones may stay at 0.5 ACU. The headline of the demo is "see
+   the cluster autoscale," and a summary that fakes a scaling story
+   when none happened would undermine the entire platform. The system
+   prompt requires the words "did not scale" or "stayed at X" when
+   `peak_acu == starting_acu`.
+
+**Decision.** Schema as defined in `app/src/ngx_workload_lab/models.py`:
+`workload_type`, `row_count` (target), `mix_ratio`, `duration_seconds`
+(hard cap), `table_name` (allowlisted to `{"workload_orders"}`).
+RunRecord includes `rows_completed`, `starting_acu`, `peak_acu`. Summary
+prompt enforces ACU honesty.
+
+**Table-name allowlist.** Bedrock chooses workload type and row counts
+but not table identifiers. The intent-parser prompt instructs the model
+to always emit `"workload_orders"` regardless of what the user typed,
+and the Pydantic validator rejects anything else with a 400. This
+enforces "Bedrock never drives privileged actions" (CLAUDE.md): the
+model cannot influence which table the executor writes to.
+
+**Consequences.**
+- Demo behavior is predictable (you get the seconds you asked for) at
+  the cost of pretending the row_count number is exact.
+- Summaries can read as deflating ("did not scale; capacity stayed at
+  0.5 throughout") — this is intentional and honest.
+- Adding new tables requires editing `ALLOWED_TABLE_NAMES` AND adding
+  the schema/seed migration in workload.py. Not free, by design.
+
+**v1.5 migration path.** Larger workloads → async via Step Functions or
+SQS, removing the 60-second duration cap. The schema would gain
+`duration_seconds: 5..3600` once the synchronous-Lambda constraint is
+gone.
