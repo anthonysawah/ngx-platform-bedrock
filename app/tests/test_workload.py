@@ -72,6 +72,29 @@ def test_sample_current_acu_returns_zero_when_no_datapoints() -> None:
     assert sample_current_acu(cw, "cluster-id") == 0.0
 
 
+def test_storage_normalize_handles_nested_floats() -> None:
+    from datetime import UTC
+    from datetime import datetime as dt
+    from decimal import Decimal as Dec
+
+    from ngx_workload_lab.storage import _normalize_for_ddb
+
+    spec_like = {
+        "workload_type": "mixed",
+        "mix_ratio": 0.3,
+        "row_count": 15000,
+        "items": [{"price": 9.99, "qty": 1}, {"price": 4.5, "qty": 2}],
+    }
+    out = _normalize_for_ddb(spec_like)
+    assert out["mix_ratio"] == Dec("0.3")
+    assert out["row_count"] == 15000  # ints stay ints
+    assert out["items"][0]["price"] == Dec("9.99")
+    assert out["items"][1]["price"] == Dec("4.5")
+
+    iso = _normalize_for_ddb(dt(2026, 5, 4, 14, 0, tzinfo=UTC))
+    assert iso == "2026-05-04T14:00:00+00:00"
+
+
 def test_percentile_basic() -> None:
     assert _percentile([], 50) == 0.0
     assert _percentile([10.0], 95) == 10.0

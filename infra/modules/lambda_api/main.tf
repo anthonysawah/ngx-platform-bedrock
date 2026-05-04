@@ -179,7 +179,8 @@ data "aws_iam_policy_document" "lambda_inline" {
     )
   }
 
-  # DynamoDB — read/write the runs table + Query the GSI.
+  # DynamoDB — read/write the runs table + Query the GSI. BatchWriteItem
+  # is what boto3's table.batch_writer() uses to flush per-second metrics.
   statement {
     sid    = "DynamoDbTableAccess"
     effect = "Allow"
@@ -189,6 +190,7 @@ data "aws_iam_policy_document" "lambda_inline" {
       "dynamodb:GetItem",
       "dynamodb:Query",
       "dynamodb:DescribeTable",
+      "dynamodb:BatchWriteItem",
     ]
     resources = concat([var.dynamodb_table_arn], var.dynamodb_gsi_arns)
   }

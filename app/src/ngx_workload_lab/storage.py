@@ -56,7 +56,7 @@ def update_run_header(
         name_placeholder = f"#u{i}"
         value_placeholder = f":u{i}"
         expression_names[name_placeholder] = key
-        expression_values[value_placeholder] = _to_ddb_value(value)
+        expression_values[value_placeholder] = _normalize_for_ddb(value)
         set_clauses.append(f"{name_placeholder} = {value_placeholder}")
 
     table.update_item(
@@ -110,12 +110,21 @@ def _to_ddb_item(json_str: str) -> dict[str, Any]:
     return json.loads(json_str, parse_float=Decimal)
 
 
-def _to_ddb_value(value: Any) -> Any:
-    """Single-value coercion for UpdateItem expressions."""
+def _normalize_for_ddb(value: Any) -> Any:
+    """Recursive coercion for UpdateItem expression values.
+
+    DynamoDB rejects Python floats — they must be Decimal. Datetimes go
+    to ISO 8601 strings. Walks nested dicts and lists so a serialized
+    Pydantic model passed to `updates` is fully Decimal-clean.
+    """
     if isinstance(value, float):
         return Decimal(str(value))
     if isinstance(value, datetime):
         return value.isoformat()
+    if isinstance(value, dict):
+        return {k: _normalize_for_ddb(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_normalize_for_ddb(v) for v in value]
     return value
 
 
