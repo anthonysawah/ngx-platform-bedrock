@@ -119,6 +119,16 @@ async def health() -> dict[str, str]:
     return {"status": "ok", "version": __version__}
 
 
+# CORS preflight: API Gateway HTTP API CORS only auto-intercepts OPTIONS when
+# no route catches it. Our $default route catches everything (including
+# OPTIONS), so the preflight reaches Lambda — FastAPI 405s by default and the
+# browser rejects the preflight. Returning 204 here lets API GW's response
+# headers (allow-origin, allow-methods, allow-headers) pass through cleanly.
+@app.options("/{full_path:path}")
+async def cors_preflight(full_path: str) -> Response:
+    return Response(status_code=204)
+
+
 @app.post("/workloads", status_code=201)
 async def create_workload(req: WorkloadRequest) -> dict[str, Any]:
     run_id = str(uuid.uuid4())
