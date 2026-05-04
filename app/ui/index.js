@@ -230,6 +230,9 @@ function showStepper(visible) {
 function renderParsedSpec(prompt, spec) {
   parsedSpecPrompt.textContent = `"${prompt}"`;
   parsedSpecGrid.innerHTML = "";
+  // Each label-value pair is rendered as a single atomic .stat unit so
+  // flex-wrap moves them as a whole when the viewport narrows. The old
+  // grid auto-fit layout split labels from their values across rows.
   const fields = [
     ["workload_type", spec.workload_type ?? "—"],
     ["target rows", numberFmt(spec.row_count)],
@@ -238,12 +241,17 @@ function renderParsedSpec(prompt, spec) {
     ["table", spec.table_name ?? "—"],
   ];
   for (const [label, value] of fields) {
-    const dt = document.createElement("dt");
-    dt.textContent = label;
-    const dd = document.createElement("dd");
-    dd.textContent = String(value);
-    parsedSpecGrid.appendChild(dt);
-    parsedSpecGrid.appendChild(dd);
+    const stat = document.createElement("div");
+    stat.className = "stat";
+    const labelEl = document.createElement("div");
+    labelEl.className = "stat-label";
+    labelEl.textContent = label;
+    const valueEl = document.createElement("div");
+    valueEl.className = "stat-value";
+    valueEl.textContent = String(value);
+    stat.appendChild(labelEl);
+    stat.appendChild(valueEl);
+    parsedSpecGrid.appendChild(stat);
   }
 }
 
