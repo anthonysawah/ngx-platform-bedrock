@@ -15,7 +15,7 @@ must be `{` and the very last character must be `}`.
   "workload_type":     "insert" | "select" | "mixed",
   "row_count":         integer,  // 1..100000, target only — see semantics below
   "mix_ratio":         number,   // 0.0..1.0, fraction of operations that are SELECT
-  "duration_seconds":  integer,  // 5..20, hard cap (v1 limit; see DECISIONS ADR-009)
+  "duration_seconds":  integer,  // 5..180, hard cap (3-min workload ceiling; v1.5 async path, see ADR-012)
   "table_name":        string    // must be from the allowlist below
 }
 ```
@@ -23,11 +23,11 @@ must be `{` and the very last character must be `}`.
 ## Semantics — read carefully
 
 - `duration_seconds` is a **hard cap**. The executor will stop at this
-  many seconds regardless of what else is happening. **The valid range
-  is 5..20 in v1** because the synchronous request path is bounded by
-  the API Gateway HTTP API integration timeout (30s); see ADR-009. If
-  the user asks for "a minute" or "30 seconds", clip to 20 — do not
-  fabricate values outside the schema.
+  many seconds regardless of what else is happening. The valid range
+  is **5..180** (workloads run async on a self-invoked Lambda; see
+  ADR-012). For "a million inserts" or similar large asks, prefer
+  60–180 seconds so Aurora has time to scale up and the chart shows
+  real ACU movement.
 
 - `row_count` is a **target, not a guarantee**. The executor will try to
   insert/select this many rows but will stop early if `duration_seconds`
@@ -85,6 +85,14 @@ User: "insert 100,000 rows in 5 seconds"
 (row_count clipped from 100k to 15k — 5 seconds at ~3k inserts/sec is the
 realistic ceiling. The user got the duration they asked for; they did not
 get the impossible throughput.)
+
+User: "do a million inserts and let aurora scale"
+```
+{"workload_type":"insert","row_count":100000,"mix_ratio":0.0,"duration_seconds":180,"table_name":"workload_orders"}
+```
+(row_count clipped to schema max of 100k. duration set to 180 so Aurora
+has enough time to actually scale up and CloudWatch publishes new ACU
+datapoints during the run.)
 
 User: "just selects, 10 seconds"
 ```

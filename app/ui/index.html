@@ -36,8 +36,8 @@
           </div>
         </form>
         <p class="hint">
-          v1 caps at 20 seconds (synchronous request budget). The request blocks while Aurora runs;
-          the chart appears once Bedrock finishes summarizing.
+          Duration caps at 180s. Workloads run async on a self-invoked Lambda; this page polls for
+          status until the run completes, then renders the chart and Bedrock's summary.
         </p>
       </section>
 

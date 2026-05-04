@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import asyncio
+import json
 import os
 import time
 import uuid
@@ -18,7 +18,6 @@ from ngx_workload_lab import __version__, bedrock, storage, workload
 from ngx_workload_lab.config import Settings
 from ngx_workload_lab.logging_setup import configure_logging, get_logger
 from ngx_workload_lab.models import (
-    MetricSample,
     RunRecord,
     RunStatus,
     WorkloadCreated,
@@ -26,10 +25,10 @@ from ngx_workload_lab.models import (
     WorkloadSpec,
 )
 
-# Total budget for the synchronous request path. API Gateway HTTP API
-# integration timeout caps at 30s; we leave 2s buffer for response
-# serialization. ADR-009 has the rationale.
-REQUEST_DEADLINE_SECONDS = 28.0
+# Sentinel field on async self-invocation events. The Lambda handler routes
+# to the worker path when this key is present, otherwise it forwards the
+# event to Mangum (HTTP API path). See ADR-012.
+ASYNC_EVENT_KEY = "_ngx_async_workload"
 
 configure_logging(level=os.environ.get("LOG_LEVEL", "INFO"))
 logger = get_logger("ngx_workload_lab")
@@ -61,6 +60,11 @@ def _secrets_client() -> Any:
 @lru_cache(maxsize=1)
 def _cloudwatch_client() -> Any:
     return boto3.client("cloudwatch", region_name=get_settings().aws_region)
+
+
+@lru_cache(maxsize=1)
+def _lambda_client() -> Any:
+    return boto3.client("lambda", region_name=get_settings().aws_region)
 
 
 @lru_cache(maxsize=1)
@@ -129,39 +133,34 @@ async def cors_preflight(full_path: str) -> Response:
     return Response(status_code=204)
 
 
-@app.post("/workloads", status_code=201)
+@app.post("/workloads", status_code=202)
 async def create_workload(req: WorkloadRequest) -> dict[str, Any]:
+    """Async kick-off. Parses intent synchronously (so a bad prompt still
+    returns 400 right away), persists a `running` RunRecord with the spec,
+    self-invokes the Lambda with InvocationType=Event to run the workload
+    out-of-band, and returns 202 + run_id immediately. UI polls
+    GET /workloads/{run_id} for status. See ADR-012.
+    """
+    settings = get_settings()
+    table = _runs_table()
     run_id = str(uuid.uuid4())
     now = datetime.now(UTC)
 
-    # Persist a placeholder so even a Bedrock failure leaves an auditable row.
     placeholder = RunRecord(
         run_id=run_id,
         status="pending",
         created_at=now,
         updated_at=now,
     )
-    storage.put_run_header(_runs_table(), placeholder)
+    storage.put_run_header(table, placeholder)
 
     try:
-        result = await asyncio.wait_for(
-            asyncio.to_thread(_run_workload_sync, run_id, req.prompt),
-            timeout=REQUEST_DEADLINE_SECONDS,
+        spec, parse_usage = bedrock.parse_intent(
+            _bedrock_client(), settings.bedrock_model_id, req.prompt
         )
-    except TimeoutError:
-        storage.update_run_header(
-            _runs_table(),
-            run_id,
-            status="timeout",
-            updates={"error": "Request exceeded synchronous deadline."},
-        )
-        raise HTTPException(
-            status_code=504,
-            detail={"run_id": run_id, "error": "Workload exceeded the synchronous request budget."},
-        ) from None
     except bedrock.BedrockValidationError as e:
         storage.update_run_header(
-            _runs_table(),
+            table,
             run_id,
             status="bedrock_error",
             updates={"error": "intent_parser produced invalid WorkloadSpec"},
@@ -175,22 +174,39 @@ async def create_workload(req: WorkloadRequest) -> dict[str, Any]:
                 "validation_errors": e.errors,
             },
         ) from e
-    except Exception as e:
-        logger.exception("workload_unexpected_failure", run_id=run_id)
-        storage.update_run_header(
-            _runs_table(),
-            run_id,
-            status="workload_error",
-            updates={"error": str(e)[:512]},
-        )
-        raise HTTPException(
-            status_code=500,
-            detail={"run_id": run_id, "error": "Workload execution failed."},
-        ) from e
 
-    return WorkloadCreated(run_id=run_id, status=result.status, spec=result.spec).model_dump(
-        mode="json"
+    storage.update_run_header(
+        table,
+        run_id,
+        status="running",
+        updates={
+            "spec": spec.model_dump(),
+            "bedrock_input_tokens": parse_usage.input_tokens,
+            "bedrock_output_tokens": parse_usage.output_tokens,
+        },
     )
+
+    function_name = os.environ.get("AWS_LAMBDA_FUNCTION_NAME")
+    if not function_name:
+        # Local dev fallback: run synchronously inline. Lambda always sets this.
+        logger.warning("no_lambda_function_name_falling_back_to_inline_run")
+        _run_async_worker(run_id, spec, parse_usage)
+    else:
+        _lambda_client().invoke(
+            FunctionName=function_name,
+            InvocationType="Event",
+            Payload=json.dumps(
+                {
+                    ASYNC_EVENT_KEY: True,
+                    "run_id": run_id,
+                    "spec": spec.model_dump(),
+                    "parse_input_tokens": parse_usage.input_tokens,
+                    "parse_output_tokens": parse_usage.output_tokens,
+                }
+            ).encode(),
+        )
+
+    return WorkloadCreated(run_id=run_id, status="running", spec=spec).model_dump(mode="json")
 
 
 @app.get("/workloads/{run_id}")
@@ -217,15 +233,15 @@ async def list_workloads() -> dict[str, list[dict[str, Any]]]:
     return {"runs": [r.model_dump(mode="json") for r in records]}
 
 
-# ---------- workload orchestration ----------
+# ---------- async worker path ----------
 
 
-def _run_workload_sync(run_id: str, prompt: str) -> RunRecord:
-    """Bedrock parse → workload run → metric persistence → Bedrock summary.
+def _run_async_worker(run_id: str, spec: WorkloadSpec, parse_usage: bedrock.BedrockUsage) -> None:
+    """Invoked via Lambda async self-invocation (or inline in local dev).
 
-    Runs in a worker thread (asyncio.to_thread) so blocking psycopg + boto3
-    calls don't block the FastAPI event loop. The wrapping
-    asyncio.wait_for enforces the request deadline.
+    Runs the executor, persists per-second metrics, calls Bedrock for the
+    summary, and writes the final RunRecord. Errors land as a workload_error
+    RunRecord so the UI can show them.
     """
     settings = get_settings()
     table = _runs_table()
@@ -235,70 +251,60 @@ def _run_workload_sync(run_id: str, prompt: str) -> RunRecord:
         table, run_id, status="running", updates={"started_at": started.isoformat()}
     )
 
-    spec, parse_usage = bedrock.parse_intent(_bedrock_client(), settings.bedrock_model_id, prompt)
-    logger.info("intent_parsed", run_id=run_id, spec=spec.model_dump())
+    try:
+        metrics, starting_acu, peak_acu, rows_completed, selects_completed = _run_executor(
+            spec, run_id, settings
+        )
 
-    storage.update_run_header(
-        table,
-        run_id,
-        status="running",
-        updates={"spec": spec.model_dump()},
-    )
+        storage.put_metric_samples(table, metrics)
 
-    metrics, starting_acu, peak_acu, rows_completed, selects_completed = _run_executor(
-        spec, run_id, settings
-    )
+        summary, summary_usage = bedrock.summarize_run(
+            _bedrock_client(),
+            settings.bedrock_model_id,
+            spec,
+            metrics,
+            starting_acu,
+            peak_acu,
+        )
+        completed = datetime.now(UTC)
 
-    storage.put_metric_samples(table, metrics)
-
-    summary, summary_usage = bedrock.summarize_run(
-        _bedrock_client(),
-        settings.bedrock_model_id,
-        spec,
-        metrics,
-        starting_acu,
-        peak_acu,
-    )
-    completed = datetime.now(UTC)
-
-    final_status: RunStatus = "complete"
-    storage.update_run_header(
-        table,
-        run_id,
-        status=final_status,
-        updates={
-            "completed_at": completed.isoformat(),
-            "rows_completed": rows_completed,
-            "selects_completed": selects_completed,
-            "starting_acu": starting_acu,
-            "peak_acu": peak_acu,
-            "summary": summary,
-            "bedrock_input_tokens": parse_usage.input_tokens + summary_usage.input_tokens,
-            "bedrock_output_tokens": parse_usage.output_tokens + summary_usage.output_tokens,
-        },
-    )
-
-    return RunRecord(
-        run_id=run_id,
-        status=final_status,
-        spec=spec,
-        created_at=started,
-        updated_at=completed,
-        started_at=started,
-        completed_at=completed,
-        rows_completed=rows_completed,
-        selects_completed=selects_completed,
-        starting_acu=starting_acu,
-        peak_acu=peak_acu,
-        summary=summary,
-        bedrock_input_tokens=parse_usage.input_tokens + summary_usage.input_tokens,
-        bedrock_output_tokens=parse_usage.output_tokens + summary_usage.output_tokens,
-    )
+        final_status: RunStatus = "complete"
+        storage.update_run_header(
+            table,
+            run_id,
+            status=final_status,
+            updates={
+                "completed_at": completed.isoformat(),
+                "rows_completed": rows_completed,
+                "selects_completed": selects_completed,
+                "starting_acu": starting_acu,
+                "peak_acu": peak_acu,
+                "summary": summary,
+                "bedrock_input_tokens": parse_usage.input_tokens + summary_usage.input_tokens,
+                "bedrock_output_tokens": parse_usage.output_tokens + summary_usage.output_tokens,
+            },
+        )
+        logger.info(
+            "workload_async_complete",
+            run_id=run_id,
+            rows=rows_completed,
+            selects=selects_completed,
+            starting_acu=starting_acu,
+            peak_acu=peak_acu,
+        )
+    except Exception as e:
+        logger.exception("workload_async_failure", run_id=run_id)
+        storage.update_run_header(
+            table,
+            run_id,
+            status="workload_error",
+            updates={"error": str(e)[:512]},
+        )
 
 
 def _run_executor(
     spec: WorkloadSpec, run_id: str, settings: Settings
-) -> tuple[list[MetricSample], float, float, int, int]:
+) -> tuple[list, float, float, int, int]:
     dsn = _build_dsn()
     with workload.WorkloadExecutor(
         spec=spec,
@@ -310,4 +316,26 @@ def _run_executor(
         return executor.run()
 
 
-handler = Mangum(app, lifespan="off")
+# ---------- Lambda handler dispatch ----------
+
+_mangum_handler = Mangum(app, lifespan="off")
+
+
+def handler(event: Any, context: Any) -> Any:
+    """Top-level Lambda entry point.
+
+    Dispatches between two event shapes:
+      - HTTP API events from API Gateway (handled by Mangum → FastAPI).
+      - Self-invoked async events with ASYNC_EVENT_KEY (run the worker).
+    """
+    if isinstance(event, dict) and event.get(ASYNC_EVENT_KEY):
+        run_id = event["run_id"]
+        spec = WorkloadSpec.model_validate(event["spec"])
+        usage = bedrock.BedrockUsage(
+            input_tokens=int(event.get("parse_input_tokens", 0)),
+            output_tokens=int(event.get("parse_output_tokens", 0)),
+        )
+        _run_async_worker(run_id, spec, usage)
+        return {"ok": True}
+
+    return _mangum_handler(event, context)

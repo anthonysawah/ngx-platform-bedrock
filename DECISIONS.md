@@ -482,3 +482,90 @@ the same powers Terraform has. The keys live only in GitHub Secrets
 4. Delete the GitHub repo secrets.
 5. Rotate the static keys out of the AWS account (deactivate, then
    delete after a cool-off).
+
+---
+
+## ADR-012 — Async self-invoke for workload execution
+
+**Context.** ADR-008/009 capped `duration_seconds` at 5..20 because the
+synchronous request path was bounded by API Gateway HTTP API's 30-second
+integration timeout. That cap meant single-run workloads could not run
+long enough for Aurora Serverless v2 to scale visibly within a request
+(CloudWatch publishes `ServerlessDatabaseCapacity` at 1-minute
+granularity, so any single sub-30-second window almost always shows
+zero ACU change).
+
+The "watch the cluster scale" headline of the demo therefore couldn't
+fire in v1 sync. Live demos showed the cluster scaling *between* runs
+(0.5 → 2.0 → 3.0 over a sequence) but never *within* one.
+
+**Decision.** Move workload execution to an async, self-invoked Lambda
+path:
+
+1. `POST /workloads` parses intent synchronously (so a bad prompt still
+   returns 400 immediately), persists a `running` `RunRecord` with the
+   parsed `WorkloadSpec`, then calls `lambda.invoke(InvocationType="Event")`
+   on its own function with a sentinel payload (`_ngx_async_workload`).
+   It returns 202 + `run_id` within a few seconds.
+2. The async self-invocation lands on the same Lambda function. The
+   top-level `handler()` checks the event for the sentinel key and
+   dispatches to the worker path (executor → metrics → Bedrock summary)
+   instead of forwarding to Mangum/FastAPI.
+3. The UI polls `GET /workloads/{run_id}` every 2 seconds until status
+   reaches a terminal value (`complete` / `bedrock_error` /
+   `workload_error` / `timeout`), then renders the chart and summary.
+
+`WorkloadSpec.duration_seconds` rises to **5..180**. Lambda timeout
+rises to **600 seconds** (10 min) — well over the 180s schema cap plus
+Bedrock + DDB overhead, with margin for cold-start and connection
+churn. The IAM execution role gains `lambda:InvokeFunction` on the
+function's own ARN (constructed from the known function name to avoid
+a Terraform graph cycle on `aws_lambda_function.this.arn`).
+
+**Alternatives considered.**
+- **Step Functions Standard.** The textbook async-orchestration tier.
+  Adds a state-machine resource, IAM trust between SFN and Lambda, and
+  a separate state-tracking primitive that effectively duplicates the
+  RunRecord. The benefit (richer retries, history) doesn't earn its
+  complexity at this scope. SFN is the v1.5+ path if the worker tier
+  ever needs branching, retries, or human approval.
+- **Amazon SQS + a separate worker Lambda.** Buy nothing over async
+  self-invoke for a single-step workload, and pays for a queue that
+  carries one message per run.
+- **Two distinct Lambda functions** (HTTP API in front, worker
+  separately). Cleaner boundary but doubles cold-start surface, doubles
+  the Terraform-managed function count, and forces the env vars to
+  exist twice.
+- **Keep sync, switch from API Gateway to ALB.** ALB target-group
+  timeout is 4000s — generous enough for any plausible workload. But
+  ALB-as-front-door costs ~$16/mo at idle and pulls our edge story
+  away from the CloudFront + HTTP API combo we already deployed.
+
+Self-invoke wins on simplicity at scope: same code, same image, same
+function, same env vars, one new IAM action.
+
+**Consequences.**
+- Workloads can now run up to 180 seconds, and Lambda has 600s of
+  timeout headroom. Aurora Serverless v2 will visibly scale within a
+  single 60-180s run when CPU pressure crosses the scaling threshold.
+- The UI shows a "running" state with elapsed seconds and sample
+  count while polling — a slight UX regression from "type prompt, get
+  chart in 12 seconds" but a correct one.
+- Every run now incurs two Lambda invocations (the HTTP one + the
+  async one). Cold-start cost is paid by the HTTP one; the async one
+  reuses the warm execution context most of the time. Negligible cost
+  impact at demo volume.
+- Async invocations have their own retry semantics. Lambda retries
+  failed async invocations twice by default. The worker writes a
+  `workload_error` `RunRecord` on failure, so the UI sees the failure
+  rather than hanging on `running` forever — but a flaky invocation
+  could write the failure twice. Acceptable for v1; v1.5 should set
+  `MaximumRetryAttempts: 0` on the function's async config to disable
+  retries entirely (the workload itself isn't idempotent — re-running
+  it doubles inserts).
+
+**v1.5 migration path.** None required for the headline scaling demo.
+The natural next step (when workloads need to span 15+ minutes, or
+need branching/retries) is Step Functions. The async self-invoke path
+maps cleanly onto a single-state SFN state machine, so the migration
+is mechanical when the time comes.

@@ -15,31 +15,72 @@ const refreshRunsBtn = document.getElementById("refresh-runs-btn");
 
 let chart = null;
 
+const POLL_INTERVAL_MS = 2000;
+const POLL_TIMEOUT_MS = 240_000; // 4 minutes — schema caps duration at 180s
+const TERMINAL_STATUSES = new Set([
+  "complete",
+  "bedrock_error",
+  "workload_error",
+  "timeout",
+]);
+
 form.addEventListener("submit", async (e) => {
   e.preventDefault();
   const prompt = promptInput.value.trim();
   if (!prompt) return;
 
-  setStatus("running", "Parsing intent and running workload (up to 25s)…");
+  setStatus("running", "Parsing intent…");
   submitBtn.disabled = true;
   resultSection.hidden = true;
 
   try {
     const created = await api("POST", "/workloads", { prompt });
-    if (created.status !== "complete") {
-      setStatus("error", `Run finished with status ${created.status}.`);
-      return;
+    const runId = created.run_id;
+    const startedAt = Date.now();
+
+    setStatus(
+      "running",
+      `Run ${runId.slice(0, 8)}… running (target ${created.spec?.duration_seconds ?? "?"}s).`,
+    );
+
+    const final = await pollUntilTerminal(runId, startedAt);
+    if (final.status === "complete") {
+      renderRun(final);
+      setStatus("complete", `Run ${runId.slice(0, 8)}… complete in ${elapsedSec(startedAt)}s.`);
+      loadRecent();
+    } else {
+      const reason = final.error || `status ${final.status}`;
+      setStatus("error", `Run ended: ${reason}`);
     }
-    const record = await api("GET", `/workloads/${created.run_id}`);
-    renderRun(record);
-    setStatus("complete", `Run ${created.run_id} complete.`);
-    loadRecent();
   } catch (err) {
     setStatus("error", err.message);
   } finally {
     submitBtn.disabled = false;
   }
 });
+
+async function pollUntilTerminal(runId, startedAt) {
+  while (Date.now() - startedAt < POLL_TIMEOUT_MS) {
+    await sleep(POLL_INTERVAL_MS);
+    const record = await api("GET", `/workloads/${runId}`);
+    if (TERMINAL_STATUSES.has(record.status)) {
+      return record;
+    }
+    setStatus(
+      "running",
+      `Run ${runId.slice(0, 8)}… ${record.status} · ${elapsedSec(startedAt)}s elapsed · ${(record.metrics?.length ?? 0)} samples`,
+    );
+  }
+  throw new Error("Polling timed out before run completed.");
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function elapsedSec(startedAt) {
+  return Math.round((Date.now() - startedAt) / 1000);
+}
 
 refreshRunsBtn.addEventListener("click", loadRecent);
 

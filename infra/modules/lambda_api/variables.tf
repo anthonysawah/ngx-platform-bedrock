@@ -31,8 +31,8 @@ variable "memory_mb" {
 
 variable "timeout_seconds" {
   type        = number
-  description = "Lambda timeout. v1 caps synchronous workloads at 60s."
-  default     = 60
+  description = "Lambda timeout. Async self-invoked workloads run in this same function (ADR-012); 600s gives 10min headroom for the 5..180s schema cap plus Bedrock + DDB overhead."
+  default     = 600
 
   validation {
     condition     = var.timeout_seconds <= 900

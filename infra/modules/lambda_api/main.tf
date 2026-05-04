@@ -240,6 +240,20 @@ data "aws_iam_policy_document" "lambda_inline" {
     ]
     resources = ["*"]
   }
+
+  # Self async-invoke for the workload runner path (ADR-012). The ARN is
+  # constructed from the known function name to avoid a circular dep on
+  # the function resource (the function's role depends on this policy).
+  statement {
+    sid    = "AsyncInvokeSelf"
+    effect = "Allow"
+    actions = [
+      "lambda:InvokeFunction",
+    ]
+    resources = [
+      "arn:aws:lambda:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:function:${local.function_name}",
+    ]
+  }
 }
 
 resource "aws_iam_role_policy" "lambda_inline" {

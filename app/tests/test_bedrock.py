@@ -29,7 +29,7 @@ def test_parse_intent_returns_validated_spec_and_usage() -> None:
         "workload_type": "mixed",
         "row_count": 50_000,
         "mix_ratio": 0.3,
-        "duration_seconds": 20,
+        "duration_seconds": 120,
         "table_name": "workload_orders",
     }
     client = Mock()
