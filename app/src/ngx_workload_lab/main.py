@@ -312,12 +312,25 @@ def _run_executor(
     spec: WorkloadSpec, run_id: str, settings: Settings
 ) -> tuple[list, float, float, int, int]:
     dsn = _build_dsn()
+    table = _runs_table()
+
+    # The metric sink lets the ACU sampler thread persist each completed
+    # second's MetricSample as it lands, so the UI's poll loop can stream
+    # partial results during the run instead of seeing nothing until the
+    # workload finishes.
+    def metric_sink(sample: Any) -> None:
+        try:
+            storage.put_metric_samples(table, [sample])
+        except Exception as e:
+            logger.warning("metric_sink_failed", run_id=run_id, error=str(e))
+
     with workload.WorkloadExecutor(
         spec=spec,
         run_id=run_id,
         dsn=dsn,
         cloudwatch_client=_cloudwatch_client(),
         cluster_identifier=settings.aurora_cluster_identifier,
+        metric_sink=metric_sink,
     ) as executor:
         return executor.run()
 

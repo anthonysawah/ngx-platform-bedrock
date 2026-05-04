@@ -169,7 +169,12 @@ class WorkloadExecutor:
         dsn: str,
         cloudwatch_client: Any,
         cluster_identifier: str,
+        metric_sink: Any = None,
     ) -> None:
+        # metric_sink: optional callable taking a single MetricSample and
+        # persisting it. The ACU sampler invokes it on each completed second
+        # so the live-streaming UI can poll partial results during the run.
+        # When None, metrics only land at the end via _collect_metrics().
         self.spec = spec
         self.run_id = run_id
         self.cluster_identifier = cluster_identifier
@@ -191,6 +196,10 @@ class WorkloadExecutor:
         self.starting_acu = 0.0
         self.peak_acu = 0.0
         self._latest_acu = 0.0
+
+        self._metric_sink = metric_sink
+        self._wallclock_start: datetime | None = None
+        self._flushed_seconds: set[int] = set()
 
     def open(self) -> None:
         self.pool.open()
@@ -215,6 +224,9 @@ class WorkloadExecutor:
         start_monotonic = time.monotonic()
         deadline = start_monotonic + self.spec.duration_seconds
         wallclock_start = datetime.now(UTC)
+        # Stash so the per-second flusher can stamp MetricSamples with
+        # consistent timestamps even though it runs in a worker thread.
+        self._wallclock_start = wallclock_start
 
         logger.info(
             "workload_run_started",
@@ -336,40 +348,64 @@ class WorkloadExecutor:
             except Exception as e:
                 logger.warning("acu_sample_failed", error=str(e))
 
-            second = int(time.monotonic() - start_monotonic)
-            bucket = self._bucket(second)
+            current_second = int(time.monotonic() - start_monotonic)
+            bucket = self._bucket(current_second)
             with bucket.lock:
                 bucket.current_acu = self._latest_acu
 
+            # Flush completed seconds to the metric sink so the UI's
+            # poll loop can stream partial results before the run
+            # finishes. A bucket is "complete" once a later second has
+            # started; we don't flush the current second yet because
+            # workers may still be filling it.
+            if self._metric_sink is not None:
+                self._flush_completed_seconds(current_second)
+
             time.sleep(1.0)
+
+    def _flush_completed_seconds(self, current_second: int) -> None:
+        if self._wallclock_start is None or self._metric_sink is None:
+            return
+        with self._buckets_lock:
+            candidates = sorted(
+                s for s in self._buckets if s < current_second and s not in self._flushed_seconds
+            )
+        for s in candidates:
+            sample = self._build_sample(s, self._wallclock_start)
+            try:
+                self._metric_sink(sample)
+                self._flushed_seconds.add(s)
+            except Exception as e:
+                # Don't crash the run on a transient DDB hiccup; the
+                # final put_metric_samples at run end re-writes everything
+                # via batch_writer (idempotent on same key) so a missed
+                # flush is recovered. Log so it shows up in the run's
+                # CloudWatch logs.
+                logger.warning("metric_flush_failed", second=s, error=str(e))
+
+    def _build_sample(self, second: int, wallclock_start: datetime) -> MetricSample:
+        bucket = self._buckets[second]
+        with bucket.lock:
+            lats = sorted(bucket.latencies_ms)
+            return MetricSample(
+                run_id=self.run_id,
+                metric_ts=wallclock_start + timedelta(seconds=second),
+                second_offset=second,
+                rows_inserted=bucket.rows_inserted,
+                selects_done=bucket.selects_done,
+                p50_latency_ms=_percentile(lats, 50),
+                p95_latency_ms=_percentile(lats, 95),
+                current_acu=bucket.current_acu,
+            )
 
     def _bucket(self, second: int) -> _SecondBucket:
         with self._buckets_lock:
             return self._buckets[second]
 
     def _collect_metrics(self, wallclock_start: datetime) -> list[MetricSample]:
-        out: list[MetricSample] = []
         with self._buckets_lock:
             seconds = sorted(self._buckets.keys())
-        for s in seconds:
-            bucket = self._buckets[s]
-            with bucket.lock:
-                lats = sorted(bucket.latencies_ms)
-                p50 = _percentile(lats, 50)
-                p95 = _percentile(lats, 95)
-                out.append(
-                    MetricSample(
-                        run_id=self.run_id,
-                        metric_ts=wallclock_start + timedelta(seconds=s),
-                        second_offset=s,
-                        rows_inserted=bucket.rows_inserted,
-                        selects_done=bucket.selects_done,
-                        p50_latency_ms=p50,
-                        p95_latency_ms=p95,
-                        current_acu=bucket.current_acu,
-                    )
-                )
-        return out
+        return [self._build_sample(s, wallclock_start) for s in seconds]
 
 
 def _percentile(sorted_values: list[float], pct: int) -> float:
