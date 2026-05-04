@@ -5,7 +5,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-WorkloadType = Literal["insert", "select", "mixed"]
+WorkloadType = Literal["insert", "select", "mixed", "update"]
 RunStatus = Literal[
     "pending",
     "running",

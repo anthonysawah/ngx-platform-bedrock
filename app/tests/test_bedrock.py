@@ -96,6 +96,23 @@ def test_parse_intent_raises_on_schema_violation_with_raw_text() -> None:
     assert exc.value.errors  # non-empty Pydantic errors
 
 
+def test_parse_intent_accepts_update_workload_type() -> None:
+    payload = {
+        "workload_type": "update",
+        "row_count": 5_000,
+        "mix_ratio": 0.0,
+        "duration_seconds": 15,
+        "table_name": "workload_orders",
+    }
+    client = Mock()
+    client.converse.return_value = _converse_response(json.dumps(payload))
+
+    spec, _ = parse_intent(client, "model-id", "rewrite the notes column on 5,000 rows")
+
+    assert spec.workload_type == "update"
+    assert spec.mix_ratio == 0.0
+
+
 def test_parse_intent_rejects_disallowed_table_name() -> None:
     bad_payload = {
         "workload_type": "insert",

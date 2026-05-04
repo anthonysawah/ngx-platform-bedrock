@@ -12,7 +12,7 @@ must be `{` and the very last character must be `}`.
 
 ```
 {
-  "workload_type":     "insert" | "select" | "mixed",
+  "workload_type":     "insert" | "select" | "mixed" | "update",
   "row_count":         integer,  // 1..100000, target only — see semantics below
   "mix_ratio":         number,   // 0.0..1.0, fraction of operations that are SELECT
   "duration_seconds":  integer,  // 5..20, hard cap (v1 limit; see DECISIONS ADR-009)
@@ -41,7 +41,14 @@ must be `{` and the very last character must be `}`.
   `workload_type: "insert"`, set `mix_ratio: 0.0`. For
   `workload_type: "select"`, set `mix_ratio: 1.0`. For `"mixed"`, choose
   a value that matches the user's described balance (default 0.3 if
-  unspecified — i.e., 70% inserts, 30% selects).
+  unspecified — i.e., 70% inserts, 30% selects). For `"update"`, set
+  `mix_ratio: 0.0` — UPDATEs have their own batching path and the
+  ratio doesn't apply.
+
+- `"update"` is for UPDATE-heavy load. It rewrites the `notes` field
+  on existing rows in the table; if the table is empty, the executor
+  bootstraps with a small INSERT batch first. Pick this when the user
+  asks for "update", "rewrite", "modify", or "patch" workloads.
 
 - If the user is ambiguous about workload type, prefer `"mixed"` with
   `mix_ratio: 0.3`.
@@ -89,4 +96,14 @@ get the impossible throughput.)
 User: "just selects, 10 seconds"
 ```
 {"workload_type":"select","row_count":1000,"mix_ratio":1.0,"duration_seconds":10,"table_name":"workload_orders"}
+```
+
+User: "rewrite the notes column on 5,000 rows"
+```
+{"workload_type":"update","row_count":5000,"mix_ratio":0.0,"duration_seconds":15,"table_name":"workload_orders"}
+```
+
+User: "update workload for 20 seconds"
+```
+{"workload_type":"update","row_count":10000,"mix_ratio":0.0,"duration_seconds":20,"table_name":"workload_orders"}
 ```

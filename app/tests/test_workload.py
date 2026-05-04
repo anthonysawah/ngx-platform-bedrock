@@ -72,6 +72,38 @@ def test_sample_current_acu_returns_zero_when_no_datapoints() -> None:
     assert sample_current_acu(cw, "cluster-id") == 0.0
 
 
+def test_next_op_for_update_workload_bootstraps_then_switches() -> None:
+    """Update workloads must insert until the table has at least
+    INSERT_BATCH_SIZE rows, then switch to UPDATE batches.
+    """
+    import random as _random
+
+    from ngx_workload_lab.models import WorkloadSpec
+    from ngx_workload_lab.workload import INSERT_BATCH_SIZE, WorkloadExecutor
+
+    spec = WorkloadSpec(
+        workload_type="update",
+        row_count=5_000,
+        mix_ratio=0.0,
+        duration_seconds=10,
+        table_name="workload_orders",
+    )
+
+    # Build executor without opening the pool (we don't touch Postgres in this test).
+    exe = WorkloadExecutor.__new__(WorkloadExecutor)
+    exe.spec = spec
+    exe._counter_lock = __import__("threading").Lock()
+    exe._total_inserted = 0
+
+    rng = _random.Random()
+    # Empty table → bootstrap inserts.
+    assert exe._next_op(rng) == "insert"
+
+    # After bootstrap rows land, switch to updates.
+    exe._total_inserted = INSERT_BATCH_SIZE
+    assert exe._next_op(rng) == "update"
+
+
 def test_storage_normalize_handles_nested_floats() -> None:
     from datetime import UTC
     from datetime import datetime as dt
