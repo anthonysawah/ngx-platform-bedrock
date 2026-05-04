@@ -175,6 +175,10 @@ async def create_workload(req: WorkloadRequest) -> dict[str, Any]:
             },
         ) from e
 
+    # Stash the user's verbatim text on the spec before persisting (ADR-011).
+    # Bedrock may have set `clamp_notes`; we never overwrite that here.
+    spec = spec.model_copy(update={"original_prompt": req.prompt})
+
     storage.update_run_header(
         table,
         run_id,

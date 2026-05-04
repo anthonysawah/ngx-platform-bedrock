@@ -175,6 +175,8 @@ def _format_summary_input(
             "mix_ratio": spec.mix_ratio,
             "duration_seconds_target": spec.duration_seconds,
             "table_name": spec.table_name,
+            "original_prompt": spec.original_prompt,
+            "clamp_notes": spec.clamp_notes,
         },
         "results": {
             "actual_duration_seconds": len(metrics),

@@ -13,10 +13,11 @@ must be `{` and the very last character must be `}`.
 ```
 {
   "workload_type":     "insert" | "select" | "mixed",
-  "row_count":         integer,  // 1..100000, target only — see semantics below
-  "mix_ratio":         number,   // 0.0..1.0, fraction of operations that are SELECT
-  "duration_seconds":  integer,  // 5..180, hard cap (3-min workload ceiling; v1.5 async path, see ADR-012)
-  "table_name":        string    // must be from the allowlist below
+  "row_count":         integer,        // 1..100000, target only — see semantics below
+  "mix_ratio":         number,         // 0.0..1.0, fraction of operations that are SELECT
+  "duration_seconds":  integer,        // 5..180, hard cap (3-min workload ceiling; ADR-012)
+  "table_name":        string,         // must be from the allowlist below
+  "clamp_notes":       string | null   // see "Honest clamping" below (ADR-011)
 }
 ```
 
@@ -46,6 +47,37 @@ must be `{` and the very last character must be `}`.
 - If the user is ambiguous about workload type, prefer `"mixed"` with
   `mix_ratio: 0.3`.
 
+## Honest clamping (ADR-011)
+
+When you adjust any field away from a number the user explicitly stated
+— because of schema bounds, throughput limits, or duration caps — you
+**must** populate `clamp_notes` with a single concise sentence
+explaining what you clamped and why. The user's downstream summary
+will surface this verbatim.
+
+- If you did not clamp anything, set `"clamp_notes": null`.
+- If you did clamp, the message must reference both the user's stated
+  number and the value you produced.
+
+Examples (`clamp_notes` only, in context of the rest of the spec):
+
+- User asked for "1,000,000 rows in 5 seconds":
+  `"Requested 1,000,000 rows in 5 seconds; row_count clamped to schema max 15,000 (5s × ~3k inserts/sec realistic ceiling)."`
+- User asked for "30 second workload":
+  `"Requested 30s duration; clamped to schema max 20s in v1 sync — wait, ADR-012 lifts this to 180s, so accept 30s as-is."`  *(do not clamp duration when within 5..180)*
+- User said "5,000 rows over 10 seconds":
+  `null`  *(achievable, no clamp)*
+
+If you clamp `duration_seconds`: only do so if the value is outside
+5..180. Inside that range, accept the user's number even if it produces
+under-utilization (a long duration with a tiny row_count).
+
+If you clamp `row_count`: do so when the schema bound (100,000) is
+exceeded, OR when a stated `(row_count, duration)` pair would require
+more than ~10,000 inserts/sec sustained throughput from a single VPC
+Lambda. The realistic ceiling is mentioned in the user-facing
+`clamp_notes`.
+
 ## Table name allowlist
 
 Currently only one table is supported. Always set:
@@ -62,37 +94,38 @@ table to keep the demo bounded.
 
 User: "insert 50,000 orders and then read some back"
 ```
-{"workload_type":"mixed","row_count":35000,"mix_ratio":0.3,"duration_seconds":20,"table_name":"workload_orders"}
+{"workload_type":"mixed","row_count":50000,"mix_ratio":0.3,"duration_seconds":60,"table_name":"workload_orders","clamp_notes":null}
 ```
-(duration capped at 20 — see ADR-009. row_count clipped from 50k to 35k to
-match what's reachable in 20s.)
-
-User: "load test for 30 seconds, mostly writes"
-```
-{"workload_type":"mixed","row_count":30000,"mix_ratio":0.15,"duration_seconds":20,"table_name":"workload_orders"}
-```
-(duration capped at 20.)
 
 User: "do a quick read-heavy run"
 ```
-{"workload_type":"mixed","row_count":5000,"mix_ratio":0.85,"duration_seconds":15,"table_name":"workload_orders"}
+{"workload_type":"mixed","row_count":5000,"mix_ratio":0.85,"duration_seconds":15,"table_name":"workload_orders","clamp_notes":null}
 ```
 
 User: "insert 100,000 rows in 5 seconds"
 ```
-{"workload_type":"insert","row_count":15000,"mix_ratio":0.0,"duration_seconds":5,"table_name":"workload_orders"}
+{"workload_type":"insert","row_count":15000,"mix_ratio":0.0,"duration_seconds":5,"table_name":"workload_orders","clamp_notes":"Requested 100,000 rows in 5 seconds; row_count clamped to 15,000 (5s × ~3k inserts/sec realistic ceiling for a single VPC Lambda)."}
 ```
-(row_count clipped from 100k to 15k — 5 seconds at ~3k inserts/sec is the
-realistic ceiling. The user got the duration they asked for; they did not
-get the impossible throughput.)
 
 User: "do a million inserts and let aurora scale"
 ```
-{"workload_type":"insert","row_count":100000,"mix_ratio":0.0,"duration_seconds":180,"table_name":"workload_orders"}
+{"workload_type":"insert","row_count":100000,"mix_ratio":0.0,"duration_seconds":180,"table_name":"workload_orders","clamp_notes":"Requested 1,000,000 rows; row_count clamped to schema max 100,000. Set duration to 180s so Aurora has time to scale visibly."}
 ```
-(row_count clipped to schema max of 100k. duration set to 180 so Aurora
-has enough time to actually scale up and CloudWatch publishes new ACU
-datapoints during the run.)
+
+User: "just selects, 10 seconds"
+```
+{"workload_type":"select","row_count":1000,"mix_ratio":1.0,"duration_seconds":10,"table_name":"workload_orders","clamp_notes":null}
+```
+
+User: "rewrite the notes column on 5,000 rows"
+```
+{"workload_type":"update","row_count":5000,"mix_ratio":0.0,"duration_seconds":15,"table_name":"workload_orders","clamp_notes":null}
+```
+
+User: "update workload for 20 seconds"
+```
+{"workload_type":"update","row_count":10000,"mix_ratio":0.0,"duration_seconds":20,"table_name":"workload_orders","clamp_notes":null}
+```
 
 User: "just selects, 10 seconds"
 ```

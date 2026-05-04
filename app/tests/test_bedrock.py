@@ -96,6 +96,70 @@ def test_parse_intent_raises_on_schema_violation_with_raw_text() -> None:
     assert exc.value.errors  # non-empty Pydantic errors
 
 
+def test_parse_intent_captures_clamp_notes_and_propagates_to_summary() -> None:
+    """ADR-011 honest-clamp pattern. Bedrock-set clamp_notes flows through
+    parse_intent and is included in the summary input so the run summary
+    can lead with it.
+    """
+    clamp_msg = (
+        "Requested 1,000,000 rows in 5 seconds; row_count clamped to 15,000 "
+        "(5s at ~3k inserts/sec realistic ceiling)."
+    )
+    payload = {
+        "workload_type": "insert",
+        "row_count": 15_000,
+        "mix_ratio": 0.0,
+        "duration_seconds": 5,
+        "table_name": "workload_orders",
+        "clamp_notes": clamp_msg,
+    }
+    client = Mock()
+    client.converse.return_value = _converse_response(json.dumps(payload))
+
+    spec, _ = parse_intent(client, "model-id", "do a million inserts in 5 seconds")
+    assert spec.clamp_notes == clamp_msg
+    # original_prompt is populated server-side after parse_intent — left empty here.
+    assert spec.original_prompt == ""
+
+    # Now feed that spec to summarize_run and confirm clamp_notes lands in
+    # the user-message JSON Bedrock will see.
+    captured: dict = {}
+
+    def fake_converse(**kwargs):
+        captured.update(kwargs)
+        return _converse_response("You asked for a million inserts; we ran 16,500…")
+
+    client2 = Mock()
+    client2.converse.side_effect = fake_converse
+
+    spec_with_prompt = spec.model_copy(
+        update={"original_prompt": "do a million inserts in 5 seconds"}
+    )
+    metrics = _metrics(5)
+    summarize_run(client2, "model-id", spec_with_prompt, metrics, starting_acu=2.0, peak_acu=2.0)
+
+    user_payload = json.loads(captured["messages"][0]["content"][0]["text"])
+    assert user_payload["spec"]["clamp_notes"] == clamp_msg
+    assert user_payload["spec"]["original_prompt"] == "do a million inserts in 5 seconds"
+
+
+def test_parse_intent_clamp_notes_default_null() -> None:
+    """Bedrock outputs without clamp_notes (achievable spec) get None."""
+    payload = {
+        "workload_type": "insert",
+        "row_count": 1000,
+        "mix_ratio": 0.0,
+        "duration_seconds": 10,
+        "table_name": "workload_orders",
+        "clamp_notes": None,
+    }
+    client = Mock()
+    client.converse.return_value = _converse_response(json.dumps(payload))
+
+    spec, _ = parse_intent(client, "model-id", "insert 1000 rows over 10 seconds")
+    assert spec.clamp_notes is None
+
+
 def test_parse_intent_rejects_disallowed_table_name() -> None:
     bad_payload = {
         "workload_type": "insert",
