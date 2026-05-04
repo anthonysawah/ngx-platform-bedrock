@@ -1,25 +1,61 @@
 # AI-Driven Database Workload Lab
 
-A platform-engineering self-service tool. A developer types **"insert
-50,000 orders and read some back"** in a web UI, and the platform:
+A platform-engineering self-service tool. A developer types a workload
+in plain English in a web UI, and the platform:
 
 1. Sends the prompt to **Bedrock (Claude Sonnet 4.6)**, which translates
    intent into a typed `WorkloadSpec` (rows, table, INSERT/SELECT mix,
    duration).
-2. Executes the workload against an **Aurora Serverless v2 Postgres**
-   cluster that auto-scales ACUs under load.
+2. Executes the workload **asynchronously** against an **Aurora Serverless
+   v2 Postgres** cluster that auto-scales ACUs under load.
 3. Streams per-second metrics (rows/sec, p50/p95 latency, current ACU)
-   into **DynamoDB** for the UI to chart.
+   into **DynamoDB** as the workload runs; the UI polls and renders the
+   chart live.
 4. Calls Bedrock a second time to write a plain-English summary of what
-   actually happened — including an honest "the cluster did not scale"
-   when no scaling happened.
+   actually happened — and is honest about it: "the cluster did not
+   scale" when no scaling happened, and a yellow banner explains any
+   user-input clamping (ADR-011).
 
-**Live demo:** https://d333zl5hz71w0e.cloudfront.net
+## Live demo
 
-> ![Workload Lab UI](docs/screenshots/ui.png)
->
-> *Screenshot to be added — open the live demo and run "do a quick
-> mixed workload for 10 seconds" to see the chart and summary.*
+**🌐 https://d333zl5hz71w0e.cloudfront.net**
+
+Try one of these prompts:
+
+- `"do a million inserts and let aurora scale"` — pushes Aurora hard
+  enough to scale 0.5 → 3+ ACU; takes ~3 minutes; the chart fills in
+  live as the cluster ramps up.
+- `"do a million inserts in 5 seconds"` — the **honest-clamp**
+  showcase: Bedrock surfaces a yellow banner explaining that
+  ~3,000 inserts/sec is the realistic ceiling and clamps to 15,000
+  rows; the summary opens by acknowledging the gap.
+- `"insert 30,000 rows in 60 seconds"` — a normal achievable run; no
+  banner, full chart, mid-range ACU.
+
+![Workload Lab UI showing live ACU scaling](docs/screenshots/ui.png)
+
+![Aurora scaling 0.5 → 3.0 ACU during a 3-minute run](docs/screenshots/aurora-scaling.png)
+
+## Demo highlights
+
+- **Live Aurora ACU scaling.** Seen in the chart as it fills in;
+  measured runs have driven 0.5 → 3.0 ACU within a single 177-second
+  window. Bedrock's summary narrates the scaling honestly — including
+  when no scaling happened (ADR-008).
+- **Honest-clamp pattern.** The platform never silently mutates user
+  input. When Bedrock has to clamp an unrealistic ask (a million rows
+  in 5 seconds), a yellow banner surfaces the user's verbatim prompt
+  and Bedrock's reasoning, and the summary's first sentence
+  acknowledges the gap (ADR-011).
+- **Async self-invoke for >30s workloads.** API Gateway HTTP API caps
+  integration at 30 seconds. The platform parses intent synchronously,
+  then `lambda.invoke(InvocationType="Event")` to itself with a
+  sentinel payload — same code, same image, same env vars. Workloads
+  now run up to 180s; the UI polls until terminal status (ADR-012).
+- **Real SNS alarm validated by real traffic.** Aurora hit the 4.0 ACU
+  ceiling during testing; an `aurora-acu-at-max` ALARM email arrived,
+  and an OK email followed when the cluster returned to baseline. End-
+  to-end observability — not a paper exercise.
 
 ---
 
@@ -211,6 +247,32 @@ Notes:
 - `terraform destroy` does **not** remove SNS subscription confirmations — that's an inbox-side click.
 
 ---
+
+## Known limitations (v1)
+
+Honest list of where the demo's seams show. The same kind of detail
+is in the relevant ADRs.
+
+- **CloudWatch ACU metric is published at 1-minute granularity**
+  (ADR-008). Within a 60-second workload, the per-second ACU samples
+  on the chart are often the same value because no new datapoint has
+  been published yet. Longer runs (90–180s) reveal the actual scaling
+  curve. A "scaled live" run on the chart looks like a few step
+  changes, not a smooth ramp — that's CloudWatch, not Aurora.
+- **`row_count` is a target, not a guarantee** (ADR-008). The executor
+  honors `duration_seconds` as the hard cap; row_count is best-effort.
+  Honest-clamping (ADR-011) clamps unrealistic asks at parse time so
+  Bedrock's summary can acknowledge the gap.
+- **Lambda async invocation retries on failure by default.** The
+  worker writes a `workload_error` RunRecord on caught exceptions, but
+  an uncaught crash could land twice in the table. v1 accepts this;
+  v1.5 sets `MaximumRetryAttempts: 0` on the function's async config.
+- **Single NAT, single writer Aurora, single AZ for the writer.** v1
+  cost-saver. v1.5 adds HA NAT, reader replicas, and multi-AZ.
+- **Local Terraform state** (ADR-002). v1.5 migrates to S3 + DynamoDB
+  lock + GitHub OIDC.
+- **Static AWS keys for CI deploys** (ADR-010). v1.5 swaps to GitHub
+  OIDC with a least-privilege role.
 
 ## What's next (v1.5)
 

@@ -378,6 +378,12 @@ gone.
 
 ## ADR-009 — `duration_seconds` capped at 5..20 in v1 (API GW timeout)
 
+> **Superseded by ADR-012.** This ADR captured the 30-second sync-path
+> ceiling. ADR-012 moves workload execution to async self-invoke and
+> lifts the bound to 5..180. ADR-009 stays in the record as the
+> reasoning for *why* the sync ceiling existed and what triggered the
+> async refactor.
+
 **Context.** ADR-008 framed `duration_seconds` as a hard cap. Initial
 draft had it at 5..60 to match Lambda's 60-second timeout. That doesn't
 fit the synchronous request path: API Gateway HTTP API integration
