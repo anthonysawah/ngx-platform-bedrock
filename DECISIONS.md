@@ -91,3 +91,45 @@ here so the deviation is intentional and reviewable.
 
 **v1.5 migration path.** None expected. AWS-managed VPC ENI policy remains
 the right tool for this job.
+
+---
+
+## ADR-005 — Gateway VPC endpoints in v1, interface endpoints in v1.5
+
+**Context.** A Lambda inside private subnets has two ways to reach AWS APIs:
+(1) NAT egress to the public AWS endpoint, or (2) a VPC endpoint that pins
+the call to the AWS network. Endpoints come in two flavors:
+
+- **Gateway** (S3, DynamoDB): free, route-table-attached, no SG management.
+- **Interface** (SSM, Secrets Manager, Bedrock Runtime): an ENI per subnet
+  per service (~$7.20/mo each) plus $0.01/GB processed, plus a security
+  group to manage.
+
+For a one-day demo with a NAT gateway already in the picture, the math on
+the three interface endpoints we'd want (SSM + Secrets Manager + Bedrock
+Runtime, ~$22/mo + $0.01/GB) does not justify itself versus letting those
+calls take the NAT egress path for the demo's lifetime.
+
+**Decision.**
+- v1: Provision **gateway endpoints only** (S3, DynamoDB). They are free,
+  remove DynamoDB and S3 traffic from NAT data charges, and add no
+  ongoing operational burden.
+- v1: SSM, Secrets Manager, and Bedrock Runtime calls flow through the NAT
+  gateway. This is fine for a workload that calls these handfuls of times
+  per request, not millions.
+- v1.5: Add interface endpoints when the platform runs continuously and
+  NAT data charges + cross-AZ data charges start to dominate the bill.
+
+**Consequences.** Lambda cold start hits NAT for SSM + Secrets Manager
+parameter fetches and for Bedrock Converse calls. Acceptable for v1; a
+real platform with steady-state traffic should add the interface endpoints
+to keep traffic on AWS's private network and to remove NAT as a single
+point of failure for AWS API calls.
+
+**v1.5 migration path.**
+1. Create a security group `vpc-endpoints` allowing 443 ingress from the
+   Lambda SG only.
+2. Add `aws_vpc_endpoint` resources for `ssm`, `secretsmanager`,
+   `bedrock-runtime`, attached to the private subnets and the SG.
+3. Set `private_dns_enabled = true` so existing SDK calls automatically
+   resolve to the endpoint.
