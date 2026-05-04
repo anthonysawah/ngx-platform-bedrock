@@ -15,6 +15,15 @@ release introduced a regression on a Friday afternoon.
 at the time of bootstrap. Pin `hashicorp/random` to `3.6.3`. Bumps are
 deliberate and recorded as new ADR entries.
 
+**Alternatives considered.**
+- `~> 5.0` (any 5.x minor): re-resolves on each `init`, exactly the
+  scenario we're avoiding.
+- `~> 5.100`: pessimistic on patch. Better than `~> 5.0`, still allows
+  silent patch bumps. Rejected — patch releases have caused regressions.
+- Drop the `random` pin: it's only used by Aurora's `random_password` in
+  early versions of the module. After ADR-007 we no longer need it, but
+  it's pinned for clarity if anyone reverts that refactor.
+
 **Consequences.** `terraform init` is reproducible. CI cannot drift onto a
 new minor without a code change. The `.terraform.lock.hcl` file is committed
 (see also ADR-002).
@@ -29,6 +38,15 @@ cost of bootstrapping S3 + DynamoDB + IAM-for-CI exceeds the benefit.
 
 **Decision.** Use the default `local` backend for v1. Commit
 `.terraform.lock.hcl` so provider checksums are reproducible across machines.
+
+**Alternatives considered.**
+- S3 + DynamoDB lock from day one: the right answer for any team or any
+  environment with more than one operator. Skipped only because it adds
+  ~30 minutes of bootstrap (bucket, lock table, IAM, OIDC role) for a
+  one-day demo.
+- Terraform Cloud free tier: would solve state and locking together.
+  Adds an external SaaS dependency that the v1.5 OIDC plan would need
+  to revisit anyway.
 
 **Consequences.** No concurrent applies. State lives on the operator's
 machine — destroy or migrate before deleting the worktree. Risk is acceptable
@@ -55,6 +73,13 @@ where the operator is the only user, and root is what's already configured.
 **Decision.** Accept root usage for the v1 deploy of this demo. Do not store
 root credentials anywhere outside the operator's local credentials file.
 Don't share root access keys.
+
+**Alternatives considered.**
+- Provision an `admin` IAM user before any other Terraform: the textbook
+  answer. Adds ~15 minutes of yak-shaving (user, MFA, access keys, CLI
+  reconfigure) for a one-day single-operator demo.
+- IAM Identity Center / SSO: cleanest long-term path, requires Identity
+  Center setup which is its own project. Lined up as the v1.5 migration.
 
 **Consequences.** Audit trail attributes every action to the root principal
 rather than a named user. This is fine for a personal demo and unacceptable
@@ -85,6 +110,14 @@ in sync with new ENI features.
 the Lambda execution role. All other permissions (Bedrock, Secrets Manager,
 DynamoDB, SSM, RDS describe) are inline and scoped to specific resource
 ARNs and specific actions.
+
+**Alternatives considered.**
+- Inline copy of the managed policy: drift over time as AWS adds new
+  ENI-related actions; we'd lag and our Lambda would silently fail on
+  the next ENI feature.
+- Drop VPC entirely (use RDS Data API instead of psycopg-in-VPC): kills
+  the "real production posture" goal in CLAUDE.md, and the Data API has
+  hard latency floors that make the demo workload less impressive.
 
 **Consequences.** Single deviation from "no managed policies". Documented
 here so the deviation is intentional and reviewable.
@@ -119,6 +152,14 @@ calls take the NAT egress path for the demo's lifetime.
   per request, not millions.
 - v1.5: Add interface endpoints when the platform runs continuously and
   NAT data charges + cross-AZ data charges start to dominate the bill.
+
+**Alternatives considered.**
+- All endpoints (gateway + interface) from day one: ~$22/mo plus
+  per-AZ ENI costs that double or triple if we add HA NAT later. For a
+  demo running ~24h, that's a real waste.
+- No endpoints, all NAT egress: simpler still but pays NAT data charges
+  on every DynamoDB metric write. With our per-second metric pattern
+  that adds up faster than the $0 gateway endpoints.
 
 **Consequences.** Lambda cold start hits NAT for SSM + Secrets Manager
 parameter fetches and for Bedrock Converse calls. Acceptable for v1; a
@@ -159,6 +200,16 @@ support resource-level permissions in IAM:
 **Decision.** Allow these specific actions with `Resource: "*"`. Do not
 expand the wildcard to other actions. Rely on application code to scope
 calls to the cluster we own (we pass `DBClusterIdentifier` explicitly).
+
+**Alternatives considered.**
+- Skip the per-second ACU sample: kills the demo's "watch it scale"
+  story (already partly degraded by CloudWatch's 1-minute granularity
+  per ADR-008/009).
+- Replace `rds:DescribeDBClusters` with a Postgres SQL query for
+  capacity info: Aurora exposes some capacity-adjacent state via
+  custom GUCs, but no documented authoritative ACU value. Unstable.
+- Skip X-Ray tracing: would silence one observability dimension that's
+  cheap and useful when something is slow. Not worth the savings.
 
 **Consequences.** The execution role technically allows describing every
 cluster in the account. In a single-account v1 demo this is moot. In a
@@ -205,6 +256,18 @@ The Lambda's IAM policy continues to scope `secretsmanager:GetSecretValue`
 to that single ARN. Application code reads username and password from the
 secret at cold start and combines them with the cluster endpoint (env var)
 to form a connection string.
+
+**Alternatives considered.**
+- Mark `random_password.master.result` and the `secret_string` as
+  `sensitive`: hides the value from `terraform plan`/`apply` output, but
+  leaves it stored in plaintext inside the state file. Cosmetic, not
+  protective.
+- Encrypt state with a customer-managed KMS key (Terraform v1.10+ remote
+  state encryption): worth doing in v1.5 alongside the S3 backend
+  migration; doesn't help v1's local-state setup.
+- IAM auth for Postgres (no password at all): the right end-state. Out
+  of scope for v1 — requires per-team DB users and a token-refresh
+  loop. Slated for v1.5.
 
 **Consequences.**
 - Password is never in Terraform state. Safe to migrate state to S3.
@@ -278,6 +341,19 @@ choices made up front:
 RunRecord includes `rows_completed`, `starting_acu`, `peak_acu`. Summary
 prompt enforces ACU honesty.
 
+**Alternatives considered.**
+- `row_count` as the hard cap: matches user mental model ("insert 50k
+  rows") but makes "insert 100k rows in 5 seconds" a contract that
+  Aurora cannot fulfill from a single Lambda. Either we accept timing
+  out the Lambda, or we silently exceed the duration. Both are worse
+  than honest under-delivery.
+- Drop `row_count` from the spec entirely: the executor pushes as hard
+  as it can for the duration. Loses user intent ("I want roughly N
+  rows of work").
+- Let Bedrock pick any `table_name`: violates "Bedrock never drives
+  privileged actions" (CLAUDE.md). Even seeing a typo'd table name
+  leak into a SQL string is too close to prompt-injection-as-code.
+
 **Table-name allowlist.** Bedrock chooses workload type and row counts
 but not table identifiers. The intent-parser prompt instructs the model
 to always emit `"workload_orders"` regardless of what the user typed,
@@ -327,6 +403,17 @@ ADR-008). Set `REQUEST_DEADLINE_SECONDS = 28.0` in `main.py` as the
 asyncio.wait_for budget, leaving 2 seconds of buffer before API GW
 returns 504.
 
+**Alternatives considered.**
+- Keep schema at 5..60, runtime-clamp to 20 in the executor: confusing
+  output ("you asked for 60s, got 20s") that the schema and prompt
+  don't acknowledge. Schema and behavior should agree.
+- Switch from API Gateway HTTP API to REST API: REST API integration
+  timeout maxes at 29 seconds — same constraint, no win. Adds the
+  complexity of a different API tier with no benefit at this scope.
+- Async kickoff (POST returns 202 + run_id, executor runs out-of-band):
+  the right answer. Out of scope for v1 (Step Functions or SQS, plus a
+  poller-style UI). Slated for v1.5.
+
 **Consequences.**
 - Aurora Serverless v2 publishes `ServerlessDatabaseCapacity` to
   CloudWatch at 1-minute granularity. Within a 20-second window we
@@ -345,3 +432,53 @@ returns 504.
   3. The schema bound on `duration_seconds` rises to 5..3600.
   4. The UI polls `GET /workloads/{run_id}` for incremental progress
      instead of waiting on a synchronous response.
+
+---
+
+## ADR-010 — CI uses static AWS keys in v1; OIDC role is the v1.5 path
+
+**Context.** The CI workflows (`.github/workflows/ci.yml`,
+`.github/workflows/deploy-dev.yml`) need AWS credentials to run
+`terraform plan` on PRs and `terraform apply` on merges to main.
+Two common patterns:
+
+1. **Static IAM user access keys** stored in GitHub Secrets, passed in
+   via env vars on each workflow run.
+2. **GitHub OIDC** with a per-repo IAM role that GitHub assumes via STS
+   for the duration of the job — no long-lived credentials anywhere.
+
+OIDC is the right answer for any environment that lives beyond a one-day
+demo. Setting it up requires creating an IAM OIDC provider for
+`token.actions.githubusercontent.com`, an IAM role with a trust policy
+that scopes to `repo:owner/repo:ref:refs/heads/main` (and equivalent for
+PRs), and a Terraform module to manage that role's policy. About 30
+minutes of yak-shaving.
+
+**Decision.** v1 uses GitHub Secrets `AWS_ACCESS_KEY_ID` and
+`AWS_SECRET_ACCESS_KEY` with permissions equivalent to what
+`terraform apply` needs (a wide policy in the demo account; would be
+narrowly-scoped in a real account). The deploy workflow runs against
+a GitHub Environment named `dev-apply` with required reviewers — so
+even with static keys, an apply needs human approval.
+
+**Alternatives considered.**
+- OIDC from day one: the right end-state, see above. Skipped to keep
+  the CI step in scope.
+- Run Terraform manually only, no CI deploy at all: loses the
+  plan-on-PR review surface that catches half-baked module changes
+  before they merge.
+
+**Consequences.** A leaked GitHub repo secret could give an attacker
+the same powers Terraform has. The keys live only in GitHub Secrets
+(rotated by hand if needed) — not in commits, not in env files.
+
+**v1.5 migration path.**
+1. Create IAM OIDC provider for `token.actions.githubusercontent.com`
+   (Terraform-managed, in a new `infra/modules/github_oidc/`).
+2. Create per-environment IAM role with trust policy scoped to the
+   repo + branch + workflow-job pair.
+3. Replace `aws-actions/configure-aws-credentials` with the OIDC
+   variant: `role-to-assume:` + `aws-region:`.
+4. Delete the GitHub repo secrets.
+5. Rotate the static keys out of the AWS account (deactivate, then
+   delete after a cool-off).

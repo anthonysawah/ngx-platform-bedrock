@@ -1,0 +1,83 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+# A pull_request triggers can take any number of jobs running on the same
+# ref; cancel older runs when newer commits land.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  python:
+    name: Python — ruff + pytest
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          version: "0.5.x"
+
+      - name: Provision Python 3.12 venv
+        run: |
+          uv venv --python 3.12 .venv
+          uv pip install --python .venv/bin/python -e ".[dev]"
+
+      - name: ruff format --check
+        run: .venv/bin/ruff format --check src tests
+
+      - name: ruff check
+        run: .venv/bin/ruff check src tests
+
+      - name: pytest
+        run: .venv/bin/python -m pytest -ra
+
+  terraform:
+    name: Terraform — fmt + validate
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.9.8
+          terraform_wrapper: false
+
+      - name: terraform fmt -check
+        run: terraform fmt -recursive -check infra/
+
+      - name: terraform init (no backend)
+        working-directory: infra/envs/dev
+        run: terraform init -backend=false -input=false
+
+      - name: terraform validate
+        working-directory: infra/envs/dev
+        run: terraform validate -no-color
+
+  checkov:
+    name: Checkov — IaC scan
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run Checkov on infra/
+        uses: bridgecrewio/checkov-action@v12
+        with:
+          directory: infra
+          framework: terraform
+          quiet: true
+          soft_fail: true # v1: report findings, don't block. Tighten in v1.5.
+          output_format: cli
+          download_external_modules: false
