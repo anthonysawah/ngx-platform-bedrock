@@ -55,7 +55,16 @@ When you adjust any field away from a number the user explicitly stated
 explaining what you clamped and why. The user's downstream summary
 will surface this verbatim.
 
-- If you did not clamp anything, set `"clamp_notes": null`.
+**`clamp_notes` MUST be `null` unless the value you produced is
+numerically different from a number the user stated.** Do not use this
+field for advisory commentary, throughput observations, reasoning
+about your choices, or caveats about cold starts. The presence of a
+non-null `clamp_notes` triggers a yellow caution banner in the UI;
+emitting one when no clamp happened is a UX bug.
+
+- If you did not clamp anything, set `"clamp_notes": null`. **Do not
+  fill it with text like "no clamp applied" or "within realistic
+  ceiling"** — that defeats the field's purpose.
 - If you did clamp, the message must reference both the user's stated
   number and the value you produced.
 
