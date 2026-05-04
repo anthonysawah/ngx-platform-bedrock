@@ -1,0 +1,343 @@
+<mxfile host="app.diagrams.net" modified="2026-05-04T22:50:00.000Z" agent="Codex" version="22.1.0">
+  <diagram name="Detailed AWS Architecture" id="ngx-arch">
+    <mxGraphModel dx="1629" dy="1079" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1700" pageHeight="1100" background="#FFFFFF" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="title" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=22;fontStyle=1;fontColor=#1A1A1A" value="AI-Driven Database Workload Lab" vertex="1">
+          <mxGeometry height="32" width="1620" x="40" y="20" as="geometry" />
+        </mxCell>
+        <mxCell id="subtitle" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=12;fontColor=#555555" value="Region us-east-2  •  Lambda inside VPC  •  Aurora Serverless v2  •  Bedrock Claude Sonnet 4.6" vertex="1">
+          <mxGeometry height="20" width="1620" x="40" y="56" as="geometry" />
+        </mxCell>
+        <mxCell id="swim-client" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#F5F7FA;strokeColor=#B0B8C1;fontSize=10;fontStyle=1;fontColor=#555555;align=left;verticalAlign=top;spacingLeft=8;spacingTop=4;dashed=1" value="CLIENT" vertex="1">
+          <mxGeometry height="700" width="200" x="40" y="100" as="geometry" />
+        </mxCell>
+        <mxCell id="swim-edge" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FAF7F5;strokeColor=#B0B8C1;fontSize=10;fontStyle=1;fontColor=#555555;align=left;verticalAlign=top;spacingLeft=8;spacingTop=4;dashed=1" value="EDGE" vertex="1">
+          <mxGeometry height="700" width="220" x="260" y="100" as="geometry" />
+        </mxCell>
+        <mxCell id="swim-app" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#F2F8F2;strokeColor=#7AA116;fontSize=10;fontStyle=1;fontColor=#3D5A1F;align=left;verticalAlign=top;spacingLeft=8;spacingTop=4;dashed=1" value="APPLICATION (VPC)" vertex="1">
+          <mxGeometry height="700" width="540" x="500" y="100" as="geometry" />
+        </mxCell>
+        <mxCell id="swim-data" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#F5F2FA;strokeColor=#8C4FFF;fontSize=10;fontStyle=1;fontColor=#4D2D8A;align=left;verticalAlign=top;spacingLeft=8;spacingTop=4;dashed=1" value="DATA &amp; AI" vertex="1">
+          <mxGeometry height="700" width="340" x="1060" y="100" as="geometry" />
+        </mxCell>
+        <mxCell id="swim-ops" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FAF5F2;strokeColor=#D97706;fontSize=10;fontStyle=1;fontColor=#7A4400;align=left;verticalAlign=top;spacingLeft=8;spacingTop=4;dashed=1" value="OBSERVABILITY &amp; CONFIG" vertex="1">
+          <mxGeometry height="700" width="240" x="1420" y="100" as="geometry" />
+        </mxCell>
+        <mxCell id="user" parent="1" style="rounded=20;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#1A1A1A;fontSize=12;fontStyle=1;fontColor=#1A1A1A;strokeWidth=2" value="Developer&#10;(browser)" vertex="1">
+          <mxGeometry height="60" width="120" x="80" y="200" as="geometry" />
+        </mxCell>
+        <mxCell id="user-note" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=10;fontColor=#555555;fontStyle=2" value="Types a workload prompt&#10;e.g. &quot;insert 50k orders&quot;" vertex="1">
+          <mxGeometry height="34" width="160" x="60" y="268" as="geometry" />
+        </mxCell>
+        <mxCell id="cloudfront" parent="1" style="rounded=20;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#8C4FFF;fontSize=11;fontStyle=1;fontColor=#1A1A1A;strokeWidth=2" value="CloudFront&#10;OAC + security headers" vertex="1">
+          <mxGeometry height="60" width="160" x="290" y="200" as="geometry" />
+        </mxCell>
+        <mxCell id="s3ui" parent="1" style="rounded=20;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#7AA116;fontSize=11;fontStyle=1;fontColor=#1A1A1A;strokeWidth=2" value="S3 (private)&#10;static UI assets" vertex="1">
+          <mxGeometry height="56" width="160" x="290" y="300" as="geometry" />
+        </mxCell>
+        <mxCell id="apigw" parent="1" style="rounded=20;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#FF4F8B;fontSize=11;fontStyle=1;fontColor=#1A1A1A;strokeWidth=2" value="API Gateway HTTP API&#10;CORS scoped to CloudFront" vertex="1">
+          <mxGeometry height="56" width="160" x="290" y="400" as="geometry" />
+        </mxCell>
+        <mxCell id="vpc-public" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#147EBA;fontSize=10;fontStyle=1;fontColor=#0E5A87;align=left;verticalAlign=top;spacingLeft=8;spacingTop=4;dashed=1" value="Public subnets (us-east-2a, 2b)" vertex="1">
+          <mxGeometry height="100" width="500" x="520" y="140" as="geometry" />
+        </mxCell>
+        <mxCell id="igw" parent="1" style="rounded=20;whiteSpace=wrap;html=1;fillColor=#EAF4FB;strokeColor=#147EBA;fontSize=10;fontStyle=1;fontColor=#0E5A87" value="Internet&#10;Gateway" vertex="1">
+          <mxGeometry height="50" width="100" x="565" y="170" as="geometry" />
+        </mxCell>
+        <mxCell id="nat" parent="1" style="rounded=20;whiteSpace=wrap;html=1;fillColor=#EAF4FB;strokeColor=#147EBA;fontSize=10;fontStyle=1;fontColor=#0E5A87" value="NAT&#10;Gateway" vertex="1">
+          <mxGeometry height="50" width="100" x="755" y="170" as="geometry" />
+        </mxCell>
+        <mxCell id="vpc-private" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#147EBA;fontSize=10;fontStyle=1;fontColor=#0E5A87;align=left;verticalAlign=top;spacingLeft=8;spacingTop=4;dashed=1" value="Private subnets (us-east-2a, 2b)" vertex="1">
+          <mxGeometry height="520" width="500" x="520" y="260" as="geometry" />
+        </mxCell>
+        <mxCell id="lambda" parent="1" style="rounded=20;whiteSpace=wrap;html=1;fillColor=#FFF4E6;strokeColor=#ED7100;fontSize=11;fontStyle=1;fontColor=#1A1A1A;strokeWidth=2" value="Lambda&#10;Python 3.12 arm64&#10;FastAPI + Mangum" vertex="1">
+          <mxGeometry height="80" width="180" x="555" y="305" as="geometry" />
+        </mxCell>
+        <mxCell id="lambda-routes" parent="1" style="rounded=20;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#ED7100;fontSize=9;fontStyle=0;fontColor=#1A1A1A;align=left;verticalAlign=middle;spacingLeft=10" value="Routes&#10;GET /health&#10;POST /workloads&#10;GET /workloads/{id}&#10;GET /workloads" vertex="1">
+          <mxGeometry height="74" width="180" x="555" y="395" as="geometry" />
+        </mxCell>
+        <mxCell id="lambda-sg" parent="1" style="rounded=20;whiteSpace=wrap;html=1;fillColor=#EAF4FB;strokeColor=#147EBA;fontSize=9;fontStyle=2;fontColor=#0E5A87" value="Lambda SG – egress 5432 to Aurora + 443 to AWS APIs" vertex="1">
+          <mxGeometry height="28" width="180" x="555" y="478" as="geometry" />
+        </mxCell>
+        <mxCell id="aurora" parent="1" style="rounded=20;whiteSpace=wrap;html=1;fillColor=#F8F0FA;strokeColor=#C925D1;fontSize=11;fontStyle=1;fontColor=#1A1A1A;strokeWidth=2" value="Aurora Serverless v2&#10;Postgres 15.17&#10;0.5 – 4 ACU" vertex="1">
+          <mxGeometry height="80" width="200" x="805" y="305" as="geometry" />
+        </mxCell>
+        <mxCell id="aurora-note" parent="1" style="rounded=20;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#C925D1;fontSize=9;fontStyle=2;fontColor=#1A1A1A;align=center" value="AWS-managed master secret&#10;in Secrets Manager" vertex="1">
+          <mxGeometry height="40" width="200" x="805" y="395" as="geometry" />
+        </mxCell>
+        <mxCell id="aurora-sg" parent="1" style="rounded=20;whiteSpace=wrap;html=1;fillColor=#EAF4FB;strokeColor=#147EBA;fontSize=9;fontStyle=2;fontColor=#0E5A87" value="Aurora SG – ingress 5432 from Lambda SG only" vertex="1">
+          <mxGeometry height="32" width="200" x="805" y="445" as="geometry" />
+        </mxCell>
+        <mxCell id="endpoints-label" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=9;fontColor=#3D5A1F;fontStyle=2" value="VPC gateway endpoints (no NAT egress for these)" vertex="1">
+          <mxGeometry height="20" width="460" x="540" y="540" as="geometry" />
+        </mxCell>
+        <mxCell id="ddb-endpoint" parent="1" style="rounded=20;whiteSpace=wrap;html=1;fillColor=#F0F7E8;strokeColor=#7AA116;fontSize=10;fontStyle=1;fontColor=#3D5A1F" value="S3 endpoint" vertex="1">
+          <mxGeometry height="40" width="160" x="580" y="570" as="geometry" />
+        </mxCell>
+        <mxCell id="s3-endpoint" parent="1" style="rounded=20;whiteSpace=wrap;html=1;fillColor=#F0F7E8;strokeColor=#7AA116;fontSize=10;fontStyle=1;fontColor=#3D5A1F" value="DynamoDB endpoint" vertex="1">
+          <mxGeometry height="40" width="180" x="800" y="570" as="geometry" />
+        </mxCell>
+        <mxCell id="dlq" parent="1" style="rounded=20;whiteSpace=wrap;html=1;fillColor=#FFEEF3;strokeColor=#FF4F8B;fontSize=10;fontStyle=1;fontColor=#1A1A1A" value="DLQ (SQS)&#10;async worker failures" vertex="1">
+          <mxGeometry height="50" width="160" x="595" y="650" as="geometry" />
+        </mxCell>
+        <mxCell id="bedrock" parent="1" style="rounded=20;whiteSpace=wrap;html=1;fillColor=#E6F7F4;strokeColor=#01A88D;fontSize=11;fontStyle=1;fontColor=#1A1A1A;strokeWidth=2" value="Bedrock Runtime&#10;Claude Sonnet 4.6&#10;via inference profile" vertex="1">
+          <mxGeometry height="70" width="280" x="1090" y="200" as="geometry" />
+        </mxCell>
+        <mxCell id="bedrock-tasks" parent="1" style="rounded=20;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#01A88D;fontSize=9;fontStyle=0;fontColor=#1A1A1A;align=left;verticalAlign=middle;spacingLeft=10" value="Two distinct AI tasks per workload&#10;1. Intent parser → WorkloadSpec (Pydantic-validated)&#10;2. Run summarizer → ≤ 5-sentence narrative" vertex="1">
+          <mxGeometry height="60" width="280" x="1090" y="280" as="geometry" />
+        </mxCell>
+        <mxCell id="ddb" parent="1" style="rounded=20;whiteSpace=wrap;html=1;fillColor=#EBEBF7;strokeColor=#3334B9;fontSize=11;fontStyle=1;fontColor=#1A1A1A;strokeWidth=2" value="DynamoDB&#10;run metrics + summaries&#10;PITR + on-demand" vertex="1">
+          <mxGeometry height="70" width="280" x="1090" y="370" as="geometry" />
+        </mxCell>
+        <mxCell id="ddb-note" parent="1" style="rounded=20;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#3334B9;fontSize=9;fontStyle=2;fontColor=#1A1A1A;align=center" value="PK run_id  •  SK metric_ts" vertex="1">
+          <mxGeometry height="22" width="280" x="1090" y="445" as="geometry" />
+        </mxCell>
+        <mxCell id="config-group" parent="1" style="rounded=20;whiteSpace=wrap;html=1;fillColor=#FAF8FB;strokeColor=#777777;fontSize=10;fontStyle=1;fontColor=#555555;align=left;verticalAlign=top;spacingLeft=10;spacingTop=4;dashed=1" value="Config &amp; Secrets" vertex="1">
+          <mxGeometry height="190" width="300" x="1080" y="490" as="geometry" />
+        </mxCell>
+        <mxCell id="secrets" parent="1" style="rounded=20;whiteSpace=wrap;html=1;fillColor=#FBE9EC;strokeColor=#DD344C;fontSize=11;fontStyle=1;fontColor=#1A1A1A;strokeWidth=2" value="Secrets Manager&#10;Aurora master credentials&#10;(AWS-managed secret)" vertex="1">
+          <mxGeometry height="65" width="280" x="1090" y="515" as="geometry" />
+        </mxCell>
+        <mxCell id="ssm" parent="1" style="rounded=20;whiteSpace=wrap;html=1;fillColor=#FCEBF3;strokeColor=#E7157B;fontSize=11;fontStyle=1;fontColor=#1A1A1A;strokeWidth=2" value="SSM Parameter Store&#10;model id, table name,&#10;cluster endpoint, secret ARN" vertex="1">
+          <mxGeometry height="65" width="280" x="1090" y="595" as="geometry" />
+        </mxCell>
+        <mxCell id="cwlogs" parent="1" style="rounded=20;whiteSpace=wrap;html=1;fillColor=#FBE7D6;strokeColor=#D97706;fontSize=11;fontStyle=1;fontColor=#1A1A1A;strokeWidth=2" value="CloudWatch Logs&#10;&amp; Metrics" vertex="1">
+          <mxGeometry height="60" width="180" x="1450" y="200" as="geometry" />
+        </mxCell>
+        <mxCell id="dashboard" parent="1" style="rounded=20;whiteSpace=wrap;html=1;fillColor=#FBE7D6;strokeColor=#D97706;fontSize=11;fontStyle=1;fontColor=#1A1A1A;strokeWidth=2" value="CloudWatch&#10;Dashboard" vertex="1">
+          <mxGeometry height="50" width="180" x="1450" y="290" as="geometry" />
+        </mxCell>
+        <mxCell id="alarms" parent="1" style="rounded=20;whiteSpace=wrap;html=1;fillColor=#FBE7D6;strokeColor=#D97706;fontSize=11;fontStyle=1;fontColor=#1A1A1A;strokeWidth=2" value="Alarms&#10;Lambda errors,&#10;Aurora ACU max" vertex="1">
+          <mxGeometry height="60" width="180" x="1450" y="370" as="geometry" />
+        </mxCell>
+        <mxCell id="sns" parent="1" style="rounded=20;whiteSpace=wrap;html=1;fillColor=#FBE7D6;strokeColor=#D97706;fontSize=11;fontStyle=1;fontColor=#1A1A1A" value="SNS&#10;email fanout" vertex="1">
+          <mxGeometry height="50" width="180" x="1450" y="460" as="geometry" />
+        </mxCell>
+        <mxCell id="xray" parent="1" style="rounded=20;whiteSpace=wrap;html=1;fillColor=#FBE7D6;strokeColor=#D97706;fontSize=11;fontStyle=1;fontColor=#1A1A1A" value="X-Ray tracing" vertex="1">
+          <mxGeometry height="40" width="180" x="1450" y="540" as="geometry" />
+        </mxCell>
+        <mxCell id="github" parent="1" style="rounded=20;whiteSpace=wrap;html=1;fillColor=#1A1A1A;strokeColor=#1A1A1A;fontSize=11;fontStyle=1;fontColor=#FFFFFF" value="GitHub Actions&#10;plan on PR  •  apply on main&#10;manual approval env" vertex="1">
+          <mxGeometry height="60" width="160" x="80" y="720" as="geometry" />
+        </mxCell>
+        <mxCell id="e-user-cf" edge="1" parent="1" source="user" style="endArrow=classic;html=1;rounded=0;strokeColor=#1A1A1A;strokeWidth=2;fontSize=10;fontColor=#1A1A1A;exitX=1;exitY=0.5;entryX=0;entryY=0.5;labelBackgroundColor=#FFFFFF;labelBorderColor=none" target="cloudfront" value="HTTPS">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-cf-s3" edge="1" parent="1" source="cloudfront" style="endArrow=classic;html=1;rounded=0;strokeColor=#7AA116;strokeWidth=2;fontSize=9;fontColor=#3D5A1F;exitX=0.5;exitY=1;entryX=0.5;entryY=0;labelBackgroundColor=#FFFFFF;labelBorderColor=none" target="s3ui" value="static">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-cf-api" edge="1" parent="1" source="user" style="endArrow=classic;html=1;rounded=0;strokeColor=#FF4F8B;strokeWidth=2;fontSize=9;fontColor=#A91E5A;exitX=0.5;exitY=1;entryX=0.5;entryY=0;labelBackgroundColor=#FFFFFF;labelBorderColor=none" target="apigw" value="browser API calls">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-api-lambda" edge="1" parent="1" source="apigw" style="endArrow=classic;html=1;rounded=0;strokeColor=#ED7100;strokeWidth=2;fontSize=9;fontColor=#9E4E00;exitX=1;exitY=0.5;entryX=0;entryY=0.5;labelBackgroundColor=#FFFFFF;labelBorderColor=none" target="lambda" value="invoke">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-lambda-aurora" edge="1" parent="1" source="lambda" style="endArrow=classic;startArrow=classic;startFill=1;html=1;rounded=0;strokeColor=#C925D1;strokeWidth=2;fontSize=9;fontColor=#7A1782;exitX=1;exitY=0.5;entryX=0;entryY=0.5;labelBackgroundColor=#FFFFFF;labelBorderColor=none" target="aurora" value="psycopg / SQL">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-lambda-bedrock" edge="1" parent="1" source="lambda" style="endArrow=classic;startArrow=classic;startFill=1;html=1;rounded=0;strokeColor=#01A88D;strokeWidth=2;fontSize=9;fontColor=#016659;exitX=1;exitY=0.15;entryX=0;entryY=0.5;labelBackgroundColor=#FFFFFF;labelBorderColor=none;edgeStyle=orthogonalEdgeStyle;curved=0" target="bedrock" value="Bedrock Converse">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="755" y="280" />
+              <mxPoint x="1075" y="280" />
+              <mxPoint x="1075" y="235" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e-lambda-ddb" edge="1" parent="1" source="lambda" style="endArrow=classic;html=1;rounded=0;strokeColor=#3334B9;strokeWidth=2;fontSize=9;fontColor=#222272;exitX=1;exitY=0.85;entryX=0;entryY=0.5;labelBackgroundColor=#FFFFFF;labelBorderColor=none;edgeStyle=orthogonalEdgeStyle;curved=0" target="ddb" value="metrics + summary">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="755" y="373" />
+              <mxPoint x="755" y="389" />
+              <mxPoint x="1045" y="389" />
+              <mxPoint x="1045" y="405" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e-lambda-config" edge="1" parent="1" source="lambda" style="endArrow=classic;html=1;rounded=0;strokeColor=#777777;strokeWidth=2;fontSize=9;fontColor=#555555;exitX=0.85;exitY=1;entryX=0;entryY=0.15;labelBackgroundColor=#FFFFFF;labelBorderColor=none;edgeStyle=orthogonalEdgeStyle;curved=0;dashed=1" target="config-group" value="config + secrets">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="708" y="406" />
+              <mxPoint x="769" y="406" />
+              <mxPoint x="769" y="525" />
+              <mxPoint x="1045" y="525" />
+              <mxPoint x="1045" y="519" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e-lambda-dlq" edge="1" parent="1" source="lambda" style="endArrow=classic;html=1;rounded=0;strokeColor=#FF4F8B;strokeWidth=2;fontSize=9;fontColor=#A91E5A;dashed=1;exitX=0.3;exitY=1;entryX=0.5;entryY=0;labelBackgroundColor=#FFFFFF;labelBorderColor=none" target="dlq" value="async worker failure">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-lambda-cw" edge="1" parent="1" style="endArrow=classic;html=1;rounded=0;strokeColor=#D97706;strokeWidth=2;fontSize=9;fontColor=#7A4400;dashed=1;exitX=1;exitY=0.25;entryX=0;entryY=0.6;labelBackgroundColor=#FFFFFF;labelBorderColor=none;edgeStyle=orthogonalEdgeStyle;curved=0" value="logs">
+          <mxGeometry relative="1" x="-0.0398" y="11" as="geometry">
+            <mxPoint as="offset" />
+            <Array as="points">
+              <mxPoint x="735" y="286" />
+              <mxPoint x="755" y="286" />
+              <mxPoint x="755" y="270" />
+              <mxPoint x="1410" y="270" />
+              <mxPoint x="1410" y="258" />
+            </Array>
+            <mxPoint x="735" y="347" as="sourcePoint" />
+            <mxPoint x="1450" y="258" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e-cw-alarm" edge="1" parent="1" source="cwlogs" style="endArrow=classic;html=1;rounded=0;strokeColor=#D97706;strokeWidth=2;labelBackgroundColor=#FFFFFF;labelBorderColor=none;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;" target="alarms" value="">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1646" y="230" />
+              <mxPoint x="1648" y="400" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e-alarm-sns" edge="1" parent="1" source="alarms" style="endArrow=classic;html=1;rounded=0;strokeColor=#D97706;strokeWidth=2;labelBackgroundColor=#FFFFFF;labelBorderColor=none" target="sns" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-github-deploy" edge="1" parent="1" source="github" style="endArrow=classic;html=1;rounded=0;strokeColor=#555555;strokeWidth=2;fontSize=10;fontColor=#1A1A1A;dashed=1;exitX=1;exitY=0.5;entryX=0;entryY=1;labelBackgroundColor=#FFFFFF;labelBorderColor=none" target="lambda" value="terraform apply">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="security-box" parent="1" style="rounded=20;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#1A1A1A;fontSize=11;fontStyle=1;fontColor=#1A1A1A;align=left;verticalAlign=top;spacingLeft=10;spacingTop=8;strokeWidth=2" value="Security posture" vertex="1">
+          <mxGeometry height="200" width="200" x="280" y="540" as="geometry" />
+        </mxCell>
+        <mxCell id="sec-1" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=9;fontColor=#1A1A1A" value="●  Least-privilege app IAM" vertex="1">
+          <mxGeometry height="20" width="190" x="288" y="568" as="geometry" />
+        </mxCell>
+        <mxCell id="sec-2" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=9;fontColor=#1A1A1A" value="●  No 0.0.0.0/0 ingress anywhere" vertex="1">
+          <mxGeometry height="20" width="190" x="288" y="588" as="geometry" />
+        </mxCell>
+        <mxCell id="sec-3" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=9;fontColor=#1A1A1A" value="●  Aurora SG ← Lambda SG only" vertex="1">
+          <mxGeometry height="20" width="190" x="288" y="608" as="geometry" />
+        </mxCell>
+        <mxCell id="sec-4" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=9;fontColor=#1A1A1A" value="●  CORS scoped to CloudFront" vertex="1">
+          <mxGeometry height="20" width="190" x="288" y="628" as="geometry" />
+        </mxCell>
+        <mxCell id="sec-5" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=9;fontColor=#1A1A1A" value="●  Aurora secret not generated in TF" vertex="1">
+          <mxGeometry height="20" width="190" x="288" y="648" as="geometry" />
+        </mxCell>
+        <mxCell id="sec-6" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=9;fontColor=#1A1A1A" value="●  Bedrock output Pydantic-validated" vertex="1">
+          <mxGeometry height="20" width="190" x="288" y="668" as="geometry" />
+        </mxCell>
+        <mxCell id="sec-7" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=9;fontColor=#1A1A1A" value="●  Encryption at rest on all stores" vertex="1">
+          <mxGeometry height="20" width="190" x="288" y="688" as="geometry" />
+        </mxCell>
+        <mxCell id="sec-8" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=9;fontColor=#1A1A1A" value="●  ARM64, immutable Lambda artifact" vertex="1">
+          <mxGeometry height="20" width="190" x="288" y="708" as="geometry" />
+        </mxCell>
+        <mxCell id="footer" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=11;fontColor=#555555;fontStyle=2" value="UI is served by CloudFront + private S3. API Gateway is public in V1 with CORS scoped to the UI. Lambda and Aurora run in private subnets; AWS API egress uses NAT plus S3/DynamoDB gateway endpoints." vertex="1">
+          <mxGeometry height="24" width="1620" x="40" y="820" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+  <diagram name="Simple Product Flow" id="ai-workload-lab-clean-v2">
+    <mxGraphModel dx="1200" dy="780" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1200" pageHeight="780" math="0" shadow="0" background="#FFFFFF">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="title" value="AI-Driven Database Workload Lab" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=28;fontStyle=1;fontColor=#0F172A" vertex="1" parent="1">
+          <mxGeometry x="60" y="36" width="720" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="subtitle" value="A developer describes a Postgres workload. The platform translates intent, runs it safely, records telemetry, and summarizes the result." style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=13;fontColor=#475569" vertex="1" parent="1">
+          <mxGeometry x="60" y="76" width="850" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="public-lane" value="PUBLIC EXPERIENCE" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#F8FAFC;strokeColor=#CBD5E1;fontSize=11;fontStyle=1;fontColor=#475569;align=left;verticalAlign=top;spacingLeft=12;spacingTop=8;dashed=1" vertex="1" parent="1">
+          <mxGeometry x="60" y="130" width="1080" height="150" as="geometry" />
+        </mxCell>
+        <mxCell id="private-lane" value="PRIVATE WORKLOAD PLANE" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#F0FDF4;strokeColor=#86EFAC;fontSize=11;fontStyle=1;fontColor=#166534;align=left;verticalAlign=top;spacingLeft=12;spacingTop=8;dashed=1" vertex="1" parent="1">
+          <mxGeometry x="60" y="320" width="1080" height="230" as="geometry" />
+        </mxCell>
+        <mxCell id="ops-lane" value="OPERATIONS AND DELIVERY" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFBEB;strokeColor=#FCD34D;fontSize=11;fontStyle=1;fontColor=#92400E;align=left;verticalAlign=top;spacingLeft=12;spacingTop=8;dashed=1" vertex="1" parent="1">
+          <mxGeometry x="60" y="590" width="1080" height="130" as="geometry" />
+        </mxCell>
+        <mxCell id="browser" value="Developer Browser&#10;prompt + live results" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#0F172A;fontSize=13;fontStyle=1;fontColor=#0F172A;strokeWidth=2" vertex="1" parent="1">
+          <mxGeometry x="100" y="175" width="170" height="64" as="geometry" />
+        </mxCell>
+        <mxCell id="ui" value="CloudFront + S3&#10;private static UI&#10;OAC + headers" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#EEF2FF;strokeColor=#6366F1;fontSize=13;fontStyle=1;fontColor=#0F172A;strokeWidth=2" vertex="1" parent="1">
+          <mxGeometry x="360" y="168" width="190" height="78" as="geometry" />
+        </mxCell>
+        <mxCell id="api" value="API Gateway&#10;HTTP API&#10;CORS scoped to UI" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF1F2;strokeColor=#F43F5E;fontSize=13;fontStyle=1;fontColor=#0F172A;strokeWidth=2" vertex="1" parent="1">
+          <mxGeometry x="650" y="168" width="190" height="78" as="geometry" />
+        </mxCell>
+        <mxCell id="cors-note" value="Public API in V1&#10;CORS is not authentication" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#CBD5E1;fontSize=11;fontColor=#475569" vertex="1" parent="1">
+          <mxGeometry x="910" y="175" width="170" height="62" as="geometry" />
+        </mxCell>
+        <mxCell id="lambda" value="Lambda API + Worker&#10;FastAPI, Mangum, Python 3.12 arm64&#10;validates Bedrock output and executes capped runs" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF7ED;strokeColor=#F97316;fontSize=13;fontStyle=1;fontColor=#0F172A;strokeWidth=2" vertex="1" parent="1">
+          <mxGeometry x="105" y="390" width="260" height="92" as="geometry" />
+        </mxCell>
+        <mxCell id="aurora" value="Aurora Serverless v2&#10;Postgres 15.17, private subnets&#10;0.5-4 ACU workload target" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FDF4FF;strokeColor=#C026D3;fontSize=13;fontStyle=1;fontColor=#0F172A;strokeWidth=2" vertex="1" parent="1">
+          <mxGeometry x="470" y="390" width="245" height="92" as="geometry" />
+        </mxCell>
+        <mxCell id="managed" value="Managed Service Calls&#10;Bedrock: prompt -&gt; spec, metrics -&gt; summary&#10;DynamoDB: run records + per-second metrics&#10;SSM + Secrets Manager: config and DB credentials" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FAF5FF;strokeColor=#A855F7;fontSize=12;fontStyle=1;fontColor=#0F172A;strokeWidth=2;align=left;verticalAlign=middle;spacingLeft=14" vertex="1" parent="1">
+          <mxGeometry x="815" y="370" width="280" height="132" as="geometry" />
+        </mxCell>
+        <mxCell id="network-note" value="Network posture&#10;Aurora accepts 5432 from Lambda SG only. Lambda reaches AWS APIs over HTTPS through NAT; S3 and DynamoDB use gateway endpoints." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#86EFAC;fontSize=11;fontColor=#166534;align=left;verticalAlign=middle;spacingLeft=12" vertex="1" parent="1">
+          <mxGeometry x="105" y="515" width="990" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="ci" value="GitHub Actions&#10;CI, package, Terraform plan/apply" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#111827;strokeColor=#111827;fontSize=12;fontStyle=1;fontColor=#FFFFFF;strokeWidth=2" vertex="1" parent="1">
+          <mxGeometry x="105" y="638" width="230" height="58" as="geometry" />
+        </mxCell>
+        <mxCell id="obs" value="CloudWatch + X-Ray&#10;logs, metrics, traces, dashboard" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FEF3C7;strokeColor=#D97706;fontSize=12;fontStyle=1;fontColor=#0F172A;strokeWidth=2" vertex="1" parent="1">
+          <mxGeometry x="390" y="638" width="230" height="58" as="geometry" />
+        </mxCell>
+        <mxCell id="alerts" value="Alarms + SNS&#10;API 5xx, Lambda errors, DDB throttles, ACU max" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FEF3C7;strokeColor=#D97706;fontSize=12;fontStyle=1;fontColor=#0F172A;strokeWidth=2" vertex="1" parent="1">
+          <mxGeometry x="675" y="638" width="250" height="58" as="geometry" />
+        </mxCell>
+        <mxCell id="hardening" value="Next hardening: auth, remote state + OIDC, interface endpoints, CMKs, IAM DB auth" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#92400E;fontSize=11;fontColor=#451A03;align=center;verticalAlign=middle" vertex="1" parent="1">
+          <mxGeometry x="965" y="638" width="140" height="58" as="geometry" />
+        </mxCell>
+        <mxCell id="security" value="Security callouts: private database, AWS-managed Aurora secret, no public S3 bucket, scoped CORS, Bedrock JSON validated with Pydantic." style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=12;fontColor=#334155;fontStyle=2" vertex="1" parent="1">
+          <mxGeometry x="110" y="735" width="980" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="e-browser-ui" value="loads UI" style="endArrow=classic;html=1;rounded=0;strokeColor=#6366F1;strokeWidth=2;fontSize=10;fontColor=#4338CA;labelBackgroundColor=#FFFFFF" edge="1" parent="1" source="browser" target="ui">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-browser-api" value="submits workload / polls run" style="endArrow=classic;html=1;rounded=0;strokeColor=#F43F5E;strokeWidth=2;fontSize=10;fontColor=#BE123C;labelBackgroundColor=#FFFFFF" edge="1" parent="1" source="browser" target="api">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="300" y="150" />
+              <mxPoint x="745" y="150" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e-api-lambda" value="invoke" style="endArrow=classic;html=1;rounded=0;strokeColor=#F97316;strokeWidth=2;fontSize=10;fontColor=#C2410C;labelBackgroundColor=#FFFFFF;edgeStyle=orthogonalEdgeStyle" edge="1" parent="1" source="api" target="lambda">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="745" y="300" />
+              <mxPoint x="235" y="300" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e-lambda-aurora" value="SQL workload" style="endArrow=classic;startArrow=classic;startFill=1;html=1;rounded=0;strokeColor=#C026D3;strokeWidth=2;fontSize=10;fontColor=#86198F;labelBackgroundColor=#FFFFFF" edge="1" parent="1" source="lambda" target="aurora">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-lambda-managed" value="AI, metrics, config, secrets" style="endArrow=classic;startArrow=classic;startFill=1;html=1;rounded=0;strokeColor=#A855F7;strokeWidth=2;fontSize=10;fontColor=#7E22CE;labelBackgroundColor=#FFFFFF" edge="1" parent="1" source="lambda" target="managed">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="420" y="360" />
+              <mxPoint x="955" y="360" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e-lambda-obs" value="telemetry" style="endArrow=classic;html=1;rounded=0;strokeColor=#D97706;strokeWidth=2;fontSize=10;fontColor=#92400E;labelBackgroundColor=#FFFFFF;dashed=1;edgeStyle=orthogonalEdgeStyle" edge="1" parent="1" source="lambda" target="obs">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="235" y="610" />
+              <mxPoint x="505" y="610" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e-obs-alerts" value="alarms" style="endArrow=classic;html=1;rounded=0;strokeColor=#D97706;strokeWidth=2;fontSize=10;fontColor=#92400E;labelBackgroundColor=#FFFFFF" edge="1" parent="1" source="obs" target="alerts">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-ci-deploy" value="Terraform manages resources" style="endArrow=classic;html=1;rounded=0;strokeColor=#64748B;strokeWidth=2;fontSize=10;fontColor=#475569;labelBackgroundColor=#FFFFFF;dashed=1;edgeStyle=orthogonalEdgeStyle" edge="1" parent="1" source="ci" target="private-lane">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="220" y="570" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

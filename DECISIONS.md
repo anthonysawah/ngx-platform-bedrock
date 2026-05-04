@@ -644,3 +644,35 @@ The natural next step (when workloads need to span 15+ minutes, or
 need branching/retries) is Step Functions. The async self-invoke path
 maps cleanly onto a single-state SFN state machine, so the migration
 is mechanical when the time comes.
+
+## Known v1.5 gaps
+
+Explicit deferrals from v1, captured for transparency during code
+review.
+
+### Terraform tests
+
+The rubric requested modules that verify configuration via
+`*.tftest.hcl`. Not implemented in v1. Priority test candidates: vpc
+(CIDR/AZ/NAT presence), aurora (ACU bounds, encryption,
+`manage_master_user_password`), lambda_api (VPC config, no IAM
+wildcards). Documenting explicitly.
+
+### Customer-managed KMS keys (CMKs)
+
+v1 uses AWS-managed encryption at rest on Aurora, DynamoDB, Secrets
+Manager. Production hardening would migrate to CMKs for rotation
+control and cross-account access. Migration requires resource
+replacement; early-v2 item.
+
+### OIDC role for CI deploys
+
+See ADR-010. Workflow is `workflow_dispatch` only; no static AWS keys
+in GitHub secrets by design. v1.5 wires GitHub OIDC with a scoped IAM
+trust policy.
+
+### Encryption-in-transit drift detection
+
+Aurora has `rds.force_ssl=1` (TLS required) but no CI assertion
+prevents drift. v1.5: Terraform test or AWS CLI assertion in the
+deploy workflow.

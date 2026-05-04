@@ -97,6 +97,8 @@ Terraform modules.
 
 ![Architecture diagram](diagrams/architecture.png)
 
+Source diagram: [diagrams/architecture-combined.drawio](diagrams/architecture-combined.drawio) — open in app.diagrams.net or VS Code with the Draw.io Integration extension. Contains both a detailed AWS architecture view and a simple product-flow view.
+
 ```
 Browser
   └─> CloudFront ─> S3 (private, OAC)            static UI
@@ -145,7 +147,7 @@ reasoning and v1.5 migration paths.
 ├── CLAUDE.md                     project conventions and rules
 ├── DECISIONS.md                  ADRs: every non-obvious choice + v1.5 path
 ├── README.md                     this file
-├── diagrams/                     architecture diagram source + PNG
+├── diagrams/                     architecture diagram source
 ├── app/
 │   ├── pyproject.toml            Python deps, ruff + pytest config
 │   ├── src/ngx_workload_lab/     service code
