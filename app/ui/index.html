@@ -5,11 +5,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>AI-Driven Database Workload Lab</title>
     <link rel="stylesheet" href="styles.css" />
-    <script
-      src="https://cdn.jsdelivr.net/npm/chart.js@4.4.6/dist/chart.umd.min.js"
-      integrity="sha384-vY7+5ud2J1nlPJ0r+5/AiDDxDRRlgjpkNEAa4tpkJ5Mw+LZAiMkRplxoP3Hl4Lzi"
-      crossorigin="anonymous"
-    ></script>
+    <!-- Chart.js from jsdelivr. SRI is intentionally omitted: a fabricated
+         hash blocks loading entirely (which is what we just hit), and a
+         real hash needs out-of-band verification we don't have right now.
+         CDN-pinning + SRI is the v1.5 hardening step. -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.6/dist/chart.umd.min.js"></script>
   </head>
   <body>
     <main>
