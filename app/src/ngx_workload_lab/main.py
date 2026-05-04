@@ -16,7 +16,7 @@ from structlog.contextvars import bind_contextvars, clear_contextvars
 
 from ngx_workload_lab import __version__, bedrock, storage, workload
 from ngx_workload_lab.config import Settings
-from ngx_workload_lab.logging_setup import configure_logging, get_logger
+from ngx_workload_lab.logging_setup import get_logger
 from ngx_workload_lab.models import (
     RunRecord,
     RunStatus,
@@ -30,7 +30,9 @@ from ngx_workload_lab.models import (
 # event to Mangum (HTTP API path). See ADR-012.
 ASYNC_EVENT_KEY = "_ngx_async_workload"
 
-configure_logging(level=os.environ.get("LOG_LEVEL", "INFO"))
+# configure_logging() runs at package import (ngx_workload_lab/__init__.py)
+# so it lands BEFORE any submodule's module-level get_logger() — see the
+# comment in __init__.py for the cache_logger_on_first_use rationale.
 logger = get_logger("ngx_workload_lab")
 
 app = FastAPI(
