@@ -60,6 +60,28 @@ resource "aws_cloudwatch_log_metric_filter" "bedrock_output_tokens" {
   }
 }
 
+# Honest-clamp observability (ADR-011). Each time the intent parser clamps a
+# user-stated number, main.py logs `workload_clamped`. This filter promotes
+# that into a custom CloudWatch metric so we can answer:
+#   "How often is Bedrock clamping user requests?"
+#   "Which prompts trigger clamps most often?" (paired with Logs Insights)
+# A sustained spike here is a signal that the schema bounds or the realistic
+# throughput ceiling is too low for what users actually want.
+resource "aws_cloudwatch_log_metric_filter" "workload_clamped" {
+  name           = "${var.name_prefix}-workload-clamped"
+  log_group_name = var.lambda_log_group_name
+
+  pattern = "{ $.message = \"workload_clamped\" }"
+
+  metric_transformation {
+    name          = "WorkloadClampedRequests"
+    namespace     = "ngx-workload-lab"
+    value         = "1"
+    default_value = "0"
+    unit          = "Count"
+  }
+}
+
 ############################
 # Alarms — Lambda errors
 ############################
@@ -290,7 +312,7 @@ resource "aws_cloudwatch_dashboard" "main" {
         type   = "metric"
         x      = 0
         y      = 18
-        width  = 24
+        width  = 12
         height = 6
         properties = {
           title  = "Bedrock token usage (input / output) — from log metric filter"
@@ -302,6 +324,24 @@ resource "aws_cloudwatch_dashboard" "main" {
             ["ngx-workload-lab", "BedrockInputTokens"],
             [".", "BedrockOutputTokens", { color = "#ff7f0e" }],
           ]
+        }
+      },
+      {
+        type   = "metric"
+        x      = 12
+        y      = 18
+        width  = 12
+        height = 6
+        properties = {
+          title  = "Workload clamps (ADR-011) — requests where Bedrock adjusted user numbers"
+          view   = "timeSeries"
+          stat   = "Sum"
+          period = 60
+          region = var.aws_region
+          metrics = [
+            ["ngx-workload-lab", "WorkloadClampedRequests", { color = "#d97706" }],
+          ]
+          yAxis = { left = { min = 0, label = "clamped requests / min" } }
         }
       },
     ]

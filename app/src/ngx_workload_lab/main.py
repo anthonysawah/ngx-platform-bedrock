@@ -179,6 +179,18 @@ async def create_workload(req: WorkloadRequest) -> dict[str, Any]:
     # Bedrock may have set `clamp_notes`; we never overwrite that here.
     spec = spec.model_copy(update={"original_prompt": req.prompt})
 
+    # Dedicated log event for the clamp metric filter. The observability
+    # module pattern-matches on message = "workload_clamped" to emit a
+    # CloudWatch custom metric (ngx-workload-lab/WorkloadClampedRequests).
+    if spec.clamp_notes:
+        logger.info(
+            "workload_clamped",
+            run_id=run_id,
+            clamp_notes=spec.clamp_notes,
+            row_count=spec.row_count,
+            duration_seconds=spec.duration_seconds,
+        )
+
     storage.update_run_header(
         table,
         run_id,
