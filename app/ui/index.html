@@ -36,9 +36,54 @@
           </div>
         </form>
         <p class="hint">
-          Duration caps at 180s. Workloads run async on a self-invoked Lambda; this page polls for
-          status until the run completes, then renders the chart and Bedrock's summary.
+          Duration caps at 180s. Bedrock parses the prompt, the chart fills in live as Aurora runs
+          the workload, then Bedrock summarizes. Watch ACU climb when the cluster scales.
         </p>
+      </section>
+
+      <ol id="phase-stepper" class="phase-stepper" aria-label="Run progress" hidden>
+        <li class="phase-step" data-phase="parse">
+          <span class="phase-dot">1</span>
+          <span class="phase-label">Parsing intent</span>
+        </li>
+        <li class="phase-divider" aria-hidden="true"></li>
+        <li class="phase-step" data-phase="run">
+          <span class="phase-dot">2</span>
+          <span class="phase-label">Running workload</span>
+        </li>
+        <li class="phase-divider" aria-hidden="true"></li>
+        <li class="phase-step" data-phase="summarize">
+          <span class="phase-dot">3</span>
+          <span class="phase-label">Summarizing</span>
+        </li>
+        <li class="phase-divider" aria-hidden="true"></li>
+        <li class="phase-step" data-phase="complete">
+          <span class="phase-dot">✓</span>
+          <span class="phase-label">Complete</span>
+        </li>
+      </ol>
+
+      <section class="parsed-spec-card" id="parsed-spec-card" hidden>
+        <div class="parsed-spec-heading">
+          <span class="parsed-spec-eyebrow">Parsed by Bedrock</span>
+          <span class="parsed-spec-prompt" id="parsed-spec-prompt"></span>
+        </div>
+        <dl class="parsed-spec-grid" id="parsed-spec-grid"></dl>
+      </section>
+
+      <section class="live-tiles" id="live-tiles" hidden>
+        <div class="live-tile" id="tile-rps">
+          <span class="tile-label">Rows last second</span>
+          <span class="tile-value" id="tile-rps-value">—</span>
+        </div>
+        <div class="live-tile" id="tile-acu">
+          <span class="tile-label">ACU</span>
+          <span class="tile-value" id="tile-acu-value">—</span>
+        </div>
+        <div class="live-tile" id="tile-elapsed">
+          <span class="tile-label">Elapsed</span>
+          <span class="tile-value" id="tile-elapsed-value">0s</span>
+        </div>
       </section>
 
       <section class="result-section" id="result" hidden>
@@ -59,6 +104,8 @@
         <ul id="recent-runs" class="recent-list"></ul>
       </section>
     </main>
+
+    <div id="toast-container" class="toast-container" aria-live="polite"></div>
 
     <footer>
       <p>
