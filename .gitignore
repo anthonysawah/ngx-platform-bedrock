@@ -12,10 +12,10 @@ htmlcov/
 
 # Terraform
 .terraform/
-.terraform.lock.hcl
 *.tfstate
 *.tfstate.*
 *.tfplan
+# .terraform.lock.hcl is intentionally NOT ignored — commit it for reproducibility.
 crash.log
 crash.*.log
 override.tf
