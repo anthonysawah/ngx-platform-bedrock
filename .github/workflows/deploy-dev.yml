@@ -1,32 +1,42 @@
-name: Deploy — dev
+# ============================================================================
+# v1: deployment is a local `terraform apply` from the operator's machine.
+#
+# CI is intentionally read-only pending the OIDC migration documented in
+# ADR-010. There are no long-lived AWS access keys in GitHub Secrets — that
+# is by design, not oversight. Adding `AWS_ACCESS_KEY_ID` / `AWS_SECRET_
+# ACCESS_KEY` would make this workflow run, but it would also create a
+# durable credential surface we don't want for a one-day demo on a personal
+# account.
+#
+# This workflow stays as a `workflow_dispatch` placeholder so:
+#   - The Lambda zip can be built and inspected on a clean Ubuntu runner
+#     (catches "works on my mac" packaging drift early).
+#   - The shape of the future OIDC + apply flow is preserved in tree, so
+#     the v1.5 cutover is a workflow-only edit (drop the dispatch-only
+#     guard, restore the AWS credentials step using the OIDC role, and
+#     add the apply job back).
+#
+# v1.5 migration plan: see DECISIONS.md ADR-010 — provision the GitHub OIDC
+# provider + per-repo deploy role, replace `aws-actions/configure-aws-
+# credentials` with the OIDC variant (`role-to-assume:`), and re-enable
+# the trigger on `push: branches: [main]`.
+# ============================================================================
+
+name: Deploy — dev (manual)
 
 on:
-  pull_request:
-    paths:
-      - "app/**"
-      - "infra/**"
-      - ".github/workflows/deploy-dev.yml"
-  push:
-    branches:
-      - main
-    paths:
-      - "app/**"
-      - "infra/**"
-      - ".github/workflows/deploy-dev.yml"
+  workflow_dispatch:
 
 env:
-  AWS_REGION: us-east-2
   TF_VERSION: 1.9.8
   ENV_DIR: infra/envs/dev
 
 permissions:
   contents: read
-  id-token: write   # reserved for ADR-010 v1.5 OIDC migration
-  pull-requests: write   # so the plan job can post a comment
 
 jobs:
   build-lambda:
-    name: Build Lambda zip
+    name: Build Lambda zip (no AWS auth)
     runs-on: ubuntu-24.04
     outputs:
       zip-sha256: ${{ steps.hash.outputs.sha }}
@@ -38,7 +48,7 @@ jobs:
         with:
           version: "0.5.x"
 
-      - name: Build venv (host build, but the script targets manylinux2014_aarch64)
+      - name: Provision Python 3.12 venv (target manylinux2014_aarch64 wheels)
         run: |
           uv venv --python 3.12 app/.venv
           uv pip install --python app/.venv/bin/python -e "app[dev]"
@@ -47,7 +57,7 @@ jobs:
       - name: Build Lambda zip
         run: bash app/scripts/build_lambda_package.sh
 
-      - name: Hash zip for caching
+      - name: Hash zip
         id: hash
         run: echo "sha=$(sha256sum app/build/lambda.zip | cut -d ' ' -f1)" >> "$GITHUB_OUTPUT"
 
@@ -58,25 +68,11 @@ jobs:
           path: app/build/lambda.zip
           retention-days: 7
 
-  plan:
-    name: terraform plan
-    needs: build-lambda
+  terraform-validate:
+    name: Terraform validate (no AWS auth)
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-
-      - name: Download Lambda zip
-        uses: actions/download-artifact@v4
-        with:
-          name: lambda-zip
-          path: app/build
-
-      - name: Configure AWS credentials (static keys; ADR-010 v1.5 = OIDC)
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ env.AWS_REGION }}
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
@@ -84,87 +80,13 @@ jobs:
           terraform_version: ${{ env.TF_VERSION }}
           terraform_wrapper: false
 
-      - name: terraform init
+      - name: terraform fmt -check
+        run: terraform fmt -recursive -check infra/
+
+      - name: terraform init (no backend; no AWS calls)
         working-directory: ${{ env.ENV_DIR }}
-        run: terraform init -input=false
+        run: terraform init -backend=false -input=false
 
-      - name: terraform plan
+      - name: terraform validate
         working-directory: ${{ env.ENV_DIR }}
-        env:
-          TF_VAR_alarm_email: ${{ secrets.ALARM_EMAIL }}
-        run: |
-          terraform plan -input=false -no-color -out=tfplan | tee plan.txt
-          terraform show -no-color tfplan > plan-show.txt
-
-      - name: Upload plan artifact
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        uses: actions/upload-artifact@v4
-        with:
-          name: tfplan
-          path: ${{ env.ENV_DIR }}/tfplan
-          retention-days: 1
-
-      - name: Comment plan on PR
-        if: github.event_name == 'pull_request'
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const fs = require('fs');
-            const planPath = `${process.env.ENV_DIR}/plan-show.txt`;
-            let plan = fs.readFileSync(planPath, 'utf8');
-            // GitHub comment hard-cap is ~65536 chars; truncate verbosely.
-            const limit = 60000;
-            if (plan.length > limit) {
-              plan = plan.slice(0, limit) + `\n\n… (truncated; see workflow logs for full plan)\n`;
-            }
-            const body = `### \`terraform plan\` — \`${process.env.ENV_DIR}\`\n\n<details><summary>Show plan</summary>\n\n\`\`\`hcl\n${plan}\n\`\`\`\n\n</details>`;
-            const { owner, repo } = context.repo;
-            const issue_number = context.payload.pull_request.number;
-            await github.rest.issues.createComment({ owner, repo, issue_number, body });
-
-  apply:
-    name: terraform apply (manual approval)
-    needs: plan
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-24.04
-    environment:
-      name: dev-apply
-      url: https://d333zl5hz71w0e.cloudfront.net
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Download Lambda zip
-        uses: actions/download-artifact@v4
-        with:
-          name: lambda-zip
-          path: app/build
-
-      - name: Download saved plan
-        uses: actions/download-artifact@v4
-        with:
-          name: tfplan
-          path: ${{ env.ENV_DIR }}
-
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ env.AWS_REGION }}
-
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_version: ${{ env.TF_VERSION }}
-          terraform_wrapper: false
-
-      - name: terraform init
-        working-directory: ${{ env.ENV_DIR }}
-        run: terraform init -input=false
-
-      - name: terraform apply (saved plan)
-        working-directory: ${{ env.ENV_DIR }}
-        run: terraform apply -input=false -no-color tfplan
-
-      - name: Deploy UI to S3 + invalidate CloudFront
-        run: bash app/scripts/deploy_ui.sh dev
+        run: terraform validate -no-color

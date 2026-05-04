@@ -32,16 +32,17 @@ Try one of these prompts:
 - `"insert 30,000 rows in 60 seconds"` — a normal achievable run; no
   banner, full chart, mid-range ACU.
 
-![Workload Lab UI showing live ACU scaling](docs/screenshots/ui.png)
+![Workload Lab UI showing the live-narrating run experience](docs/screenshots/hero-live-narrating.png)
 
-![Aurora scaling 0.5 → 3.0 ACU during a 3-minute run](docs/screenshots/aurora-scaling.png)
+![Aurora scaling 0.5 → 3.0 ACU during a 3-minute run](docs/screenshots/hero-aurora-scaling.png)
 
 ## Demo highlights
 
 - **Live Aurora ACU scaling.** Seen in the chart as it fills in;
   measured runs have driven 0.5 → 3.0 ACU within a single 177-second
-  window. Bedrock's summary narrates the scaling honestly — including
-  when no scaling happened (ADR-008).
+  window ([cluster ACU detail](docs/screenshots/aurora-cluster-acu.png)).
+  Bedrock's summary narrates the scaling honestly — including when no
+  scaling happened (ADR-008).
 - **Honest-clamp pattern.** The platform never silently mutates user
   input. When Bedrock has to clamp an unrealistic ask (a million rows
   in 5 seconds), a yellow banner surfaces the user's verbatim prompt
@@ -53,9 +54,16 @@ Try one of these prompts:
   sentinel payload — same code, same image, same env vars. Workloads
   now run up to 180s; the UI polls until terminal status (ADR-012).
 - **Real SNS alarm validated by real traffic.** Aurora hit the 4.0 ACU
-  ceiling during testing; an `aurora-acu-at-max` ALARM email arrived,
-  and an OK email followed when the cluster returned to baseline. End-
-  to-end observability — not a paper exercise.
+  ceiling during testing; an
+  [`aurora-acu-at-max` ALARM email](docs/screenshots/sns-alarm-fired.png)
+  arrived, and an
+  [OK email](docs/screenshots/sns-alarm-recovered.png) followed when the
+  cluster returned to baseline. The
+  [alarm history](docs/screenshots/alarm-history.png) shows the round-trip
+  on the dashboard
+  ([dashboard overview](docs/screenshots/cloudwatch-dashboard.png),
+  [Bedrock + clamp metrics](docs/screenshots/cloudwatch-dashboard-2.png)).
+  End-to-end observability — not a paper exercise.
 
 ---
 
@@ -121,7 +129,7 @@ reasoning and v1.5 migration paths.
 | Service      | Python 3.12 / FastAPI / Pydantic v2 / Mangum, on Lambda arm64               |
 | Workload     | psycopg 3 + psycopg_pool (4–6 conns), 4 worker threads, 500-row executemany |
 | AI           | Bedrock Converse, Claude Sonnet 4.6 via inference profile (us.\*)           |
-| Database     | Aurora Serverless v2 Postgres 15.17, AWS-managed master credentials         |
+| Database     | Aurora Serverless v2 Postgres 15.17, [AWS-managed master credentials](docs/screenshots/aurora-secret-managed.png) (ADR-007) |
 | Metrics      | DynamoDB on-demand, sparse GSI on status                                    |
 | Config       | SSM Parameter Store + Secrets Manager (no secrets in TF state)              |
 | Observability| CloudWatch alarms + dashboard, SNS email, X-Ray, structlog JSON             |
@@ -169,6 +177,14 @@ reasoning and v1.5 migration paths.
 ---
 
 ## Deploy from scratch
+
+> **v1 deploys locally.** CI runs lint, test, and `terraform validate`
+> on every PR. **Production deploy via GitHub Actions is intentionally
+> deferred to v1.5 with OIDC role assumption** — see [ADR-010](DECISIONS.md).
+> No long-lived AWS keys live in GitHub Secrets, by design. The
+> `deploy-dev.yml` workflow stays in tree as a `workflow_dispatch`
+> placeholder that builds the Lambda zip and runs `terraform validate`
+> without AWS credentials, so the v1.5 cutover is a workflow-only edit.
 
 ### Prerequisites
 
