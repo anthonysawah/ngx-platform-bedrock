@@ -34,8 +34,8 @@ output "database_name" {
 }
 
 output "master_user_secret_arn" {
-  description = "ARN of the Secrets Manager secret holding master credentials JSON."
-  value       = aws_secretsmanager_secret.master.arn
+  description = "ARN of the AWS-managed Secrets Manager secret holding master credentials. RDS creates and rotates the secret; Terraform never holds the password (ADR-007)."
+  value       = aws_rds_cluster.this.master_user_secret[0].secret_arn
 }
 
 output "security_group_id" {
