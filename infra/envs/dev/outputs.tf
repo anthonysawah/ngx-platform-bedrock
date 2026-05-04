@@ -52,3 +52,23 @@ output "dynamodb_table_arn" {
   description = "DynamoDB table ARN."
   value       = module.dynamodb.table_arn
 }
+
+output "api_endpoint" {
+  description = "Invoke URL for the HTTP API. Append /health, /workloads, etc."
+  value       = module.lambda_api.api_endpoint
+}
+
+output "lambda_function_name" {
+  description = "Lambda function name (handy for awslogs tail)."
+  value       = module.lambda_api.function_name
+}
+
+output "lambda_log_group" {
+  description = "CloudWatch log group for the Lambda."
+  value       = module.lambda_api.log_group_name
+}
+
+output "ssm_path_prefix" {
+  description = "SSM path prefix for project parameters."
+  value       = local.ssm_prefix
+}

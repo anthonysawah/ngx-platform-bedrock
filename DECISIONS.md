@@ -133,3 +133,33 @@ point of failure for AWS API calls.
    `bedrock-runtime`, attached to the private subnets and the SG.
 3. Set `private_dns_enabled = true` so existing SDK calls automatically
    resolve to the endpoint.
+
+---
+
+## ADR-006 — Action-only IAM wildcards for `rds:DescribeDBClusters` and X-Ray
+
+**Context.** The "no wildcard IAM" rule (CLAUDE.md) requires every action to
+target a specific resource ARN. Two actions used by this Lambda do not
+support resource-level permissions in IAM:
+
+1. `rds:DescribeDBClusters` — used to sample `ServerlessV2ScalingConfiguration`
+   each second for the per-second ACU metric. AWS's IAM service-authorization
+   reference lists this action as supporting only `Resource: "*"`.
+
+2. `xray:PutTraceSegments` and `xray:PutTelemetryRecords` — required when
+   `tracing_config.mode = "Active"` so the Lambda runtime can emit
+   trace data. Both list `Resource: "*"` only.
+
+**Decision.** Allow these specific actions with `Resource: "*"`. Do not
+expand the wildcard to other actions. Rely on application code to scope
+calls to the cluster we own (we pass `DBClusterIdentifier` explicitly).
+
+**Consequences.** The execution role technically allows describing every
+cluster in the account. In a single-account v1 demo this is moot. In a
+multi-tenant production account the impact is "any caller of this Lambda
+could leak metadata about unrelated clusters", mitigated by the fact that
+the application code never returns describe output to the caller.
+
+**v1.5 migration path.** None expected from AWS. Watch the IAM
+service-authorization reference for `rds:DescribeDBClusters` to gain
+resource-level support; tighten if it ever does.
