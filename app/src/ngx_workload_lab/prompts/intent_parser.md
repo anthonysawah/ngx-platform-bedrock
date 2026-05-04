@@ -15,7 +15,7 @@ must be `{` and the very last character must be `}`.
   "workload_type":     "insert" | "select" | "mixed",
   "row_count":         integer,  // 1..100000, target only — see semantics below
   "mix_ratio":         number,   // 0.0..1.0, fraction of operations that are SELECT
-  "duration_seconds":  integer,  // 5..60, hard cap
+  "duration_seconds":  integer,  // 5..20, hard cap (v1 limit; see DECISIONS ADR-009)
   "table_name":        string    // must be from the allowlist below
 }
 ```
@@ -23,9 +23,11 @@ must be `{` and the very last character must be `}`.
 ## Semantics — read carefully
 
 - `duration_seconds` is a **hard cap**. The executor will stop at this
-  many seconds regardless of what else is happening. Pick a reasonable
-  value between 5 and 60. If the user gives a duration in another unit
-  (e.g., "for a minute"), convert it to seconds.
+  many seconds regardless of what else is happening. **The valid range
+  is 5..20 in v1** because the synchronous request path is bounded by
+  the API Gateway HTTP API integration timeout (30s); see ADR-009. If
+  the user asks for "a minute" or "30 seconds", clip to 20 — do not
+  fabricate values outside the schema.
 
 - `row_count` is a **target, not a guarantee**. The executor will try to
   insert/select this many rows but will stop early if `duration_seconds`
@@ -60,13 +62,16 @@ table to keep the demo bounded.
 
 User: "insert 50,000 orders and then read some back"
 ```
-{"workload_type":"mixed","row_count":50000,"mix_ratio":0.3,"duration_seconds":45,"table_name":"workload_orders"}
+{"workload_type":"mixed","row_count":35000,"mix_ratio":0.3,"duration_seconds":20,"table_name":"workload_orders"}
 ```
+(duration capped at 20 — see ADR-009. row_count clipped from 50k to 35k to
+match what's reachable in 20s.)
 
 User: "load test for 30 seconds, mostly writes"
 ```
-{"workload_type":"mixed","row_count":40000,"mix_ratio":0.15,"duration_seconds":30,"table_name":"workload_orders"}
+{"workload_type":"mixed","row_count":30000,"mix_ratio":0.15,"duration_seconds":20,"table_name":"workload_orders"}
 ```
+(duration capped at 20.)
 
 User: "do a quick read-heavy run"
 ```

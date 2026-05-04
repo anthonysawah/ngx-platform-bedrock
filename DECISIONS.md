@@ -297,3 +297,51 @@ model cannot influence which table the executor writes to.
 SQS, removing the 60-second duration cap. The schema would gain
 `duration_seconds: 5..3600` once the synchronous-Lambda constraint is
 gone.
+
+---
+
+## ADR-009 — `duration_seconds` capped at 5..20 in v1 (API GW timeout)
+
+**Context.** ADR-008 framed `duration_seconds` as a hard cap. Initial
+draft had it at 5..60 to match Lambda's 60-second timeout. That doesn't
+fit the synchronous request path: API Gateway HTTP API integration
+timeout maxes at **30 seconds**, regardless of Lambda's timeout. A
+60-second workload returns 504 from API GW long before Lambda finishes.
+
+The full request budget breaks down roughly:
+  - Lambda cold start (VPC ENI on Hyperplane): 2–4s
+  - Bedrock Converse (intent parser):           1–3s
+  - Postgres connect + ensure table:            1–2s
+  - **Workload run** (the budget we control):   ?
+  - Bedrock Converse (run summary):             1–3s
+  - DynamoDB writes:                            <1s
+  - Response serialization:                     <1s
+
+That leaves ~15–20 seconds for the workload itself within a 30-second
+API GW ceiling.
+
+**Decision.** Tighten `WorkloadSpec.duration_seconds` to **5..20** in
+v1. Update the intent parser system prompt to enforce this (Bedrock
+clips "give me 60 seconds" to 20 with the same honesty pattern as
+ADR-008). Set `REQUEST_DEADLINE_SECONDS = 28.0` in `main.py` as the
+asyncio.wait_for budget, leaving 2 seconds of buffer before API GW
+returns 504.
+
+**Consequences.**
+- Aurora Serverless v2 publishes `ServerlessDatabaseCapacity` to
+  CloudWatch at 1-minute granularity. Within a 20-second window we
+  rarely see ACU change at all. The summary prompt narrates this
+  honestly per ADR-008.
+- The demo headline ("watch the cluster scale") is accurate over
+  multiple runs but will often show "did not scale" in any single run.
+  This is a real platform limitation worth surfacing rather than hiding.
+
+**v1.5 migration path.** Async execution via Step Functions or SQS:
+  1. POST /workloads validates intent and returns `202 + run_id`
+     immediately.
+  2. A Step Functions state machine drives the workload, writes
+     metrics, and runs the summary. Duration cap rises to whatever
+     the orchestration tier allows (Step Functions: 1 year max).
+  3. The schema bound on `duration_seconds` rises to 5..3600.
+  4. The UI polls `GET /workloads/{run_id}` for incremental progress
+     instead of waiting on a synchronous response.

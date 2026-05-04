@@ -34,7 +34,7 @@ class WorkloadSpec(BaseModel):
     workload_type: WorkloadType
     row_count: int = Field(ge=1, le=100_000)
     mix_ratio: float = Field(ge=0.0, le=1.0, default=0.3)
-    duration_seconds: int = Field(ge=5, le=60)
+    duration_seconds: int = Field(ge=5, le=20)
     table_name: str
 
     @field_validator("table_name")
