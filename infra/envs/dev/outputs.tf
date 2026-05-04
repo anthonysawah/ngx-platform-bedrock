@@ -42,3 +42,13 @@ output "aurora_security_group_id" {
   description = "Aurora SG. Lambda module ingresses from lambda SG → 5432 here."
   value       = module.aurora.security_group_id
 }
+
+output "dynamodb_table_name" {
+  description = "DynamoDB table holding run headers + per-second metric samples."
+  value       = module.dynamodb.table_name
+}
+
+output "dynamodb_table_arn" {
+  description = "DynamoDB table ARN."
+  value       = module.dynamodb.table_arn
+}

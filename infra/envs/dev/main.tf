@@ -32,3 +32,9 @@ module "aurora" {
   min_capacity   = 0.5
   max_capacity   = 4
 }
+
+module "dynamodb" {
+  source = "../../modules/dynamodb"
+
+  name_prefix = local.name_prefix
+}
