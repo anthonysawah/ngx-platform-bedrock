@@ -77,6 +77,13 @@ resource "aws_ssm_parameter" "aurora_cluster_identifier" {
   value       = module.aurora.cluster_identifier
 }
 
+resource "aws_ssm_parameter" "aurora_cluster_endpoint" {
+  name        = "${local.ssm_prefix}/aurora-cluster-endpoint"
+  description = "Aurora writer endpoint hostname for psycopg connections."
+  type        = "String"
+  value       = module.aurora.cluster_endpoint
+}
+
 resource "aws_ssm_parameter" "aurora_secret_arn" {
   name        = "${local.ssm_prefix}/aurora-secret-arn"
   description = "Secrets Manager ARN holding Aurora master credentials."
@@ -121,7 +128,10 @@ module "lambda_api" {
     SSM_PATH_PREFIX           = local.ssm_prefix
     BEDROCK_MODEL_ID          = local.bedrock_inference_profile_arn
     AURORA_CLUSTER_IDENTIFIER = module.aurora.cluster_identifier
+    AURORA_CLUSTER_ENDPOINT   = module.aurora.cluster_endpoint
     AURORA_SECRET_ARN         = module.aurora.master_user_secret_arn
+    AURORA_DATABASE_NAME      = module.aurora.database_name
+    AURORA_PORT               = tostring(module.aurora.port)
     DYNAMODB_TABLE_NAME       = module.dynamodb.table_name
   }
 
@@ -130,6 +140,7 @@ module "lambda_api" {
   depends_on = [
     aws_ssm_parameter.bedrock_model_id,
     aws_ssm_parameter.aurora_cluster_identifier,
+    aws_ssm_parameter.aurora_cluster_endpoint,
     aws_ssm_parameter.aurora_secret_arn,
     aws_ssm_parameter.dynamodb_table_name,
   ]

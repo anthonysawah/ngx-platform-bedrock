@@ -150,6 +150,12 @@ support resource-level permissions in IAM:
    `tracing_config.mode = "Active"` so the Lambda runtime can emit
    trace data. Both list `Resource: "*"` only.
 
+3. `cloudwatch:GetMetricData` — only way to read real-time
+   `ServerlessDatabaseCapacity` (the per-second ACU value the workload
+   executor samples). CloudWatch metric reads do not honor metric-level
+   resource ARNs in IAM. Application code is constrained to only query
+   our cluster's namespace+dimensions.
+
 **Decision.** Allow these specific actions with `Resource: "*"`. Do not
 expand the wildcard to other actions. Rely on application code to scope
 calls to the cluster we own (we pass `DBClusterIdentifier` explicitly).

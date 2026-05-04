@@ -226,6 +226,18 @@ data "aws_iam_policy_document" "lambda_inline" {
     ]
     resources = ["*"]
   }
+
+  # CloudWatch GetMetricData is the only way to read real-time
+  # ServerlessDatabaseCapacity (ACU). The action does not support
+  # resource-level permissions; documented in ADR-006.
+  statement {
+    sid    = "CloudwatchAcuMetricRead"
+    effect = "Allow"
+    actions = [
+      "cloudwatch:GetMetricData",
+    ]
+    resources = ["*"]
+  }
 }
 
 resource "aws_iam_role_policy" "lambda_inline" {
