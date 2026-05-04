@@ -485,6 +485,75 @@ the same powers Terraform has. The keys live only in GitHub Secrets
 
 ---
 
+## ADR-011 — Honest clamping with user acknowledgement
+
+**Context.** During manual demo testing of the v1 sync path, a user
+typed "do a million inserts in 5 seconds." Bedrock dutifully clamped
+`row_count` from 1,000,000 to 15,000 (the realistic ceiling for a
+single VPC Lambda over psycopg in 5s) and kept `duration_seconds=5`.
+The platform then ran the clamped workload and returned a summary
+that read "completed 16,500 rows against the 15,000-row target" —
+with no mention of the user's original 1,000,000-row ask.
+
+That's a UX bug: the platform silently mutated the user's input. For a
+demo this is mildly confusing. For a "platform-as-a-product" tool
+that internal developers learn to trust, silent mutation is corrosive
+— users stop believing what the platform tells them. Worse, it makes
+debugging harder: an operator looking at a RunRecord can't tell
+whether the user asked for 15k rows and got 15k, or asked for a
+million and got clamped.
+
+**Decision.** Adopt an "honest clamp" pattern across the request path:
+
+1. `WorkloadSpec` gains two fields:
+   - `original_prompt: str` — the user's verbatim text. Server-set
+     immediately after `parse_intent` returns. Default `""` so Bedrock
+     outputs without it validate cleanly under `extra="forbid"`.
+   - `clamp_notes: str | None` — set by Bedrock when it clamped any
+     field away from a stated number, `None` otherwise. The intent
+     parser system prompt now requires this field and gives concrete
+     examples for what its sentence should contain.
+2. The summary system prompt now requires that, when `clamp_notes` is
+   not null, the **first sentence** of the summary acknowledge the
+   user's original ask and what the platform actually ran. The rest of
+   the summary describes what happened.
+3. The UI renders a yellow caution banner above the chart whenever the
+   final RunRecord has `spec.clamp_notes`, including the user's
+   original prompt. When `clamp_notes` is null, no banner.
+
+**Alternatives considered.**
+- **Hard reject impossible asks.** Return 400 "row_count exceeds
+  realistic throughput; lower it and try again." Pure but
+  user-hostile — the user typed plain English; making them learn the
+  platform's throughput math is the wrong direction.
+- **Silent clamp** (status quo). Cheap, but corrodes trust. The bug
+  this ADR exists to fix.
+- **Clamp on the server side, write our own clamp_notes** (no Bedrock
+  involvement). Simpler — no system prompt change. But Bedrock has
+  the most natural-language-friendly explanation of the math; making
+  it speak first means the summary can quote it verbatim and stay
+  voice-consistent.
+
+**Consequences.**
+- Slightly larger system prompts (roughly +30 lines on intent parser
+  and +10 on summary). Token cost per call rises by ~150 input tokens.
+  Negligible at any plausible request volume.
+- Bedrock is now responsible for explaining its own clamps in plain
+  English. We trust it for that — the prompt has concrete few-shot
+  examples and the schema requires the field. If Bedrock returns
+  malformed clamp_notes, Pydantic validation catches it upstream of
+  the executor.
+- The UI gets a banner that's visible only when relevant. Users who
+  ask for achievable workloads see no banner; users who ask for the
+  impossible see exactly what happened.
+
+**v1.5 migration path.** None expected. The pattern generalizes —
+any future field with implicit caps (e.g., `mix_ratio` rounding,
+`duration_seconds` snap-to-bound) can extend the same `clamp_notes`
+mechanism rather than adding new fields.
+
+---
+
 ## ADR-012 — Async self-invoke for workload execution
 
 **Context.** ADR-008/009 capped `duration_seconds` at 5..20 because the

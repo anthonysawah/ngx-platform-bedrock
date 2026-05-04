@@ -24,9 +24,16 @@ ALLOWED_TABLE_NAMES: frozenset[str] = frozenset({"workload_orders"})
 class WorkloadSpec(BaseModel):
     """Validated, typed shape of an intent prompt.
 
-    Bedrock returns this. `duration_seconds` is the hard cap; `row_count`
-    is a target the executor tries to hit but does not exceed the duration
-    budget for. See DECISIONS.md ADR-008.
+    Bedrock returns most of this. `duration_seconds` is the hard cap;
+    `row_count` is a target the executor tries to hit but does not
+    exceed the duration budget for. See DECISIONS.md ADR-008.
+
+    Honest-clamp fields (ADR-011):
+      - `original_prompt`: the user's verbatim text. Server-set after
+        Bedrock returns. Default empty so Bedrock outputs without it
+        validate cleanly.
+      - `clamp_notes`: Bedrock-set when it clamped any field away from
+        the user's stated number. None when the spec matched the ask.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -36,6 +43,9 @@ class WorkloadSpec(BaseModel):
     mix_ratio: float = Field(ge=0.0, le=1.0, default=0.3)
     duration_seconds: int = Field(ge=5, le=180)
     table_name: str
+
+    original_prompt: str = ""
+    clamp_notes: str | None = None
 
     @field_validator("table_name")
     @classmethod

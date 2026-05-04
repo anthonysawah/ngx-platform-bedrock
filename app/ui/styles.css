@@ -161,6 +161,32 @@ button:hover:not(:disabled) {
   margin-bottom: 1rem;
 }
 
+.clamp-banner {
+  background: #fff8e1;
+  border: 1px solid #f5c518;
+  border-radius: 6px;
+  padding: 0.75rem 1rem;
+  margin-bottom: 1rem;
+  font-size: 0.9rem;
+  color: #6b4f00;
+}
+
+.clamp-banner strong {
+  display: block;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 0.25rem;
+  color: #8a6300;
+}
+
+.clamp-banner .original {
+  display: block;
+  margin-top: 0.4rem;
+  font-style: italic;
+  color: #5a5a5a;
+}
+
 .summary {
   background: #f4f4ee;
   border-left: 3px solid var(--accent-warm);

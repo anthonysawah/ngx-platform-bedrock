@@ -7,6 +7,7 @@ const promptInput = document.getElementById("prompt");
 const submitBtn = document.getElementById("submit-btn");
 const statusEl = document.getElementById("status");
 const resultSection = document.getElementById("result");
+const clampBanner = document.getElementById("clamp-banner");
 const metaEl = document.getElementById("meta");
 const summaryEl = document.getElementById("summary");
 const chartCanvas = document.getElementById("chart");
@@ -120,6 +121,21 @@ async function api(method, path, body) {
 function renderRun(record) {
   const spec = record.spec || {};
   const metrics = record.metrics || [];
+
+  // Honest-clamp banner: if Bedrock clamped any field, surface it
+  // verbatim above the chart along with the user's original prompt.
+  // ADR-011 — never silently mutate user input.
+  if (spec.clamp_notes) {
+    clampBanner.innerHTML = `
+      <strong>Heads-up — your ask was clamped</strong>
+      ${escapeHtml(spec.clamp_notes)}
+      ${spec.original_prompt ? `<span class="original">You wrote: "${escapeHtml(spec.original_prompt)}"</span>` : ""}
+    `;
+    clampBanner.hidden = false;
+  } else {
+    clampBanner.hidden = true;
+    clampBanner.innerHTML = "";
+  }
 
   metaEl.innerHTML = "";
   meta("Workload type", spec.workload_type ?? "—");
