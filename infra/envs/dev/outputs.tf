@@ -22,3 +22,23 @@ output "availability_zones" {
   description = "AZs the subnets are placed in."
   value       = module.vpc.availability_zones
 }
+
+output "aurora_cluster_identifier" {
+  description = "Aurora cluster identifier (input for describe-db-clusters ACU sampling)."
+  value       = module.aurora.cluster_identifier
+}
+
+output "aurora_cluster_endpoint" {
+  description = "Writer endpoint hostname for the Aurora cluster."
+  value       = module.aurora.cluster_endpoint
+}
+
+output "aurora_master_secret_arn" {
+  description = "Secrets Manager ARN holding master credentials JSON."
+  value       = module.aurora.master_user_secret_arn
+}
+
+output "aurora_security_group_id" {
+  description = "Aurora SG. Lambda module ingresses from lambda SG → 5432 here."
+  value       = module.aurora.security_group_id
+}
