@@ -195,6 +195,217 @@ button:hover:not(:disabled) {
   font-size: 0.95rem;
 }
 
+/* ----- Phase stepper ----- */
+
+.phase-stepper {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  list-style: none;
+  margin: 0;
+  padding: 0.85rem 1rem;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow-x: auto;
+  flex-wrap: nowrap;
+}
+
+.phase-step {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-shrink: 0;
+  font-size: 0.85rem;
+  color: var(--muted);
+  transition: color 0.2s ease;
+}
+
+.phase-dot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 999px;
+  background: #e5e5e0;
+  color: var(--muted);
+  font-weight: 600;
+  font-size: 0.75rem;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+}
+
+.phase-step.active .phase-dot {
+  background: var(--accent);
+  color: white;
+  box-shadow: 0 0 0 4px rgba(31, 111, 235, 0.18);
+  animation: phase-pulse 1.4s ease-in-out infinite;
+}
+
+.phase-step.active .phase-label {
+  color: var(--fg);
+  font-weight: 600;
+}
+
+.phase-step.done .phase-dot {
+  background: #166534;
+  color: white;
+  animation: none;
+}
+
+.phase-step.done .phase-label {
+  color: var(--muted);
+}
+
+.phase-divider {
+  flex: 1 1 auto;
+  height: 2px;
+  min-width: 0.5rem;
+  background: var(--border);
+  border-radius: 1px;
+}
+
+@keyframes phase-pulse {
+  0%, 100% { box-shadow: 0 0 0 4px rgba(31, 111, 235, 0.18); }
+  50%      { box-shadow: 0 0 0 8px rgba(31, 111, 235, 0.06); }
+}
+
+/* ----- Parsed spec card ----- */
+
+.parsed-spec-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--accent);
+  border-radius: 12px;
+  padding: 1.15rem 1.25rem;
+}
+
+.parsed-spec-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.5rem 1rem;
+  margin-bottom: 0.85rem;
+}
+
+.parsed-spec-eyebrow {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.parsed-spec-prompt {
+  color: var(--muted);
+  font-style: italic;
+  font-size: 0.85rem;
+}
+
+.parsed-spec-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 0.6rem 1.25rem;
+  margin: 0;
+}
+
+.parsed-spec-grid dt {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  margin: 0;
+}
+
+.parsed-spec-grid dd {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--fg);
+  margin: 0 0 0.4rem 0;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ----- Live tiles ----- */
+
+.live-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 0.75rem;
+}
+
+.live-tile {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 1rem 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.live-tile.pulse {
+  animation: tile-pulse 1s ease;
+}
+
+.tile-label {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+}
+
+.tile-value {
+  font-size: 1.6rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--fg);
+  line-height: 1.2;
+}
+
+#tile-acu .tile-value { transition: color 0.2s ease; }
+#tile-acu.acu-low  .tile-value { color: #166534; }
+#tile-acu.acu-mid  .tile-value { color: var(--accent-warm); }
+#tile-acu.acu-high .tile-value { color: var(--error); }
+
+@keyframes tile-pulse {
+  0%   { box-shadow: 0 0 0 0 rgba(31, 111, 235, 0);    transform: scale(1); }
+  30%  { box-shadow: 0 0 0 6px rgba(31, 111, 235, 0.2); transform: scale(1.015); }
+  100% { box-shadow: 0 0 0 0 rgba(31, 111, 235, 0);    transform: scale(1); }
+}
+
+/* ----- Toast ----- */
+
+.toast-container {
+  position: fixed;
+  top: 1rem;
+  right: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  z-index: 1000;
+  pointer-events: none;
+}
+
+.toast {
+  background: #166534;
+  color: #ecfdf3;
+  padding: 0.75rem 1.1rem;
+  border-radius: 10px;
+  box-shadow: 0 6px 20px rgba(22, 101, 52, 0.25);
+  font-size: 0.9rem;
+  font-weight: 600;
+  pointer-events: auto;
+  transform: translateX(110%);
+  opacity: 0;
+  transition: transform 0.3s ease, opacity 0.3s ease;
+}
+
+.toast.show {
+  transform: translateX(0);
+  opacity: 1;
+}
+
 .summary strong {
   display: block;
   font-size: 0.75rem;
