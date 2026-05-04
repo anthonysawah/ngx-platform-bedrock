@@ -101,3 +101,9 @@ variable "environment_variables" {
   description = "Lambda environment variables. Composed by env from module outputs + SSM parameter values."
   default     = {}
 }
+
+variable "cors_allow_origins" {
+  type        = list(string)
+  description = "Allowed Origin headers for the HTTP API CORS config. Default empty (no CORS); env composition passes the CloudFront domain in once static_site is created."
+  default     = []
+}

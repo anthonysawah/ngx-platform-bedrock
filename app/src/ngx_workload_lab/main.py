@@ -188,7 +188,11 @@ async def get_workload(run_id: str) -> dict[str, Any]:
     record = storage.get_run(_runs_table(), run_id)
     if record is None:
         raise HTTPException(status_code=404, detail={"run_id": run_id, "error": "not found"})
-    return record.model_dump(mode="json")
+
+    metrics = storage.get_run_metrics(_runs_table(), run_id)
+    payload = record.model_dump(mode="json")
+    payload["metrics"] = [m.model_dump(mode="json") for m in metrics]
+    return payload
 
 
 @app.get("/workloads")

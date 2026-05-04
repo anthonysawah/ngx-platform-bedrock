@@ -54,6 +54,12 @@ module "dynamodb" {
   name_prefix = local.name_prefix
 }
 
+module "static_site" {
+  source = "../../modules/static_site"
+
+  name_prefix = local.name_prefix
+}
+
 ############################
 # SSM parameters (config plane)
 ############################
@@ -121,6 +127,8 @@ module "lambda_api" {
 
   dynamodb_table_arn = module.dynamodb.table_arn
   dynamodb_gsi_arns  = [module.dynamodb.gsi_arn]
+
+  cors_allow_origins = [module.static_site.distribution_url]
 
   environment_variables = {
     APP_ENVIRONMENT           = var.environment

@@ -304,8 +304,17 @@ resource "aws_apigatewayv2_api" "this" {
   name          = "${var.name_prefix}-api"
   protocol_type = "HTTP"
   description   = "HTTP API fronting the ngx-workload-lab Lambda."
-  # CORS is set in the env composition once the CloudFront origin is known
-  # (Step 14). Default-deny here is fine — curl from CLI ignores CORS.
+
+  dynamic "cors_configuration" {
+    for_each = length(var.cors_allow_origins) > 0 ? [1] : []
+    content {
+      allow_origins  = var.cors_allow_origins
+      allow_methods  = ["GET", "POST", "OPTIONS"]
+      allow_headers  = ["content-type", "x-request-id", "authorization"]
+      expose_headers = ["x-request-id"]
+      max_age        = 600
+    }
+  }
 }
 
 resource "aws_apigatewayv2_integration" "lambda" {

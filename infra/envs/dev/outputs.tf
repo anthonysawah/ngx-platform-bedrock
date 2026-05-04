@@ -72,3 +72,18 @@ output "ssm_path_prefix" {
   description = "SSM path prefix for project parameters."
   value       = local.ssm_prefix
 }
+
+output "ui_url" {
+  description = "Public URL for the static UI (CloudFront)."
+  value       = module.static_site.distribution_url
+}
+
+output "ui_bucket_name" {
+  description = "S3 bucket holding the UI assets (used by deploy_ui.sh)."
+  value       = module.static_site.bucket_name
+}
+
+output "ui_distribution_id" {
+  description = "CloudFront distribution ID (used by deploy_ui.sh for invalidation)."
+  value       = module.static_site.distribution_id
+}

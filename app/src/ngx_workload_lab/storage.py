@@ -98,6 +98,28 @@ def list_recent_runs_by_status(table: Any, status: str, limit: int = 20) -> list
     return [RunRecord.model_validate(_from_ddb_item(i)) for i in response.get("Items", [])]
 
 
+def get_run_metrics(table: Any, run_id: str) -> list[MetricSample]:
+    """Fetch all per-second metric rows for a run, oldest first.
+
+    Header row uses SK="run"; metric rows use ISO 8601 timestamps starting
+    with "2". Querying SK begins_with("2") at the key level is cheap and
+    avoids reading the header. (FilterExpression can't apply to a key
+    attribute, hence the begins_with on the SK directly.)
+    """
+    response = table.query(
+        KeyConditionExpression=Key("run_id").eq(run_id) & Key("metric_ts").begins_with("2"),
+        ScanIndexForward=True,
+    )
+    return [
+        MetricSample.model_validate(_from_ddb_metric_item(i)) for i in response.get("Items", [])
+    ]
+
+
+def _from_ddb_metric_item(item: dict[str, Any]) -> dict[str, Any]:
+    """Like _from_ddb_item but keeps metric_ts (it's a real attribute on samples)."""
+    return {k: _from_ddb_value(v) for k, v in item.items()}
+
+
 # ---------- internals ----------
 
 
