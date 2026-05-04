@@ -25,3 +25,10 @@ variable "project" {
   description = "Project tag and resource-name prefix."
   default     = "ai-workload-lab"
 }
+
+variable "alarm_email" {
+  type        = string
+  description = "Email subscriber for CloudWatch alarms. Empty disables the subscription (topic still exists)."
+  default     = ""
+  sensitive   = true
+}

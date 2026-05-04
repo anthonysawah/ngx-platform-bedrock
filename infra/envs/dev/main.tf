@@ -60,6 +60,21 @@ module "static_site" {
   name_prefix = local.name_prefix
 }
 
+module "observability" {
+  source = "../../modules/observability"
+
+  name_prefix = local.name_prefix
+  alarm_email = var.alarm_email
+  aws_region  = var.aws_region
+
+  lambda_function_name      = module.lambda_api.function_name
+  lambda_log_group_name     = module.lambda_api.log_group_name
+  aurora_cluster_identifier = module.aurora.cluster_identifier
+  aurora_max_capacity       = 4
+  dynamodb_table_name       = module.dynamodb.table_name
+  api_gateway_id            = module.lambda_api.api_id
+}
+
 ############################
 # SSM parameters (config plane)
 ############################

@@ -87,3 +87,13 @@ output "ui_distribution_id" {
   description = "CloudFront distribution ID (used by deploy_ui.sh for invalidation)."
   value       = module.static_site.distribution_id
 }
+
+output "alerts_sns_topic_arn" {
+  description = "SNS topic the CloudWatch alarms publish to."
+  value       = module.observability.sns_topic_arn
+}
+
+output "dashboard_url" {
+  description = "Direct CloudWatch dashboard URL."
+  value       = module.observability.dashboard_url
+}
