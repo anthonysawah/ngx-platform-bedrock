@@ -12,10 +12,10 @@ htmlcov/
 
 # Terraform
 .terraform/
-.terraform.lock.hcl
 *.tfstate
 *.tfstate.*
 *.tfplan
+# .terraform.lock.hcl is intentionally NOT ignored — commit it for reproducibility.
 crash.log
 crash.*.log
 override.tf
@@ -41,6 +41,7 @@ Thumbs.db
 .env
 .env.local
 *.pem
+*.plan
 
 # Claude Code worktree metadata
 .claude/
