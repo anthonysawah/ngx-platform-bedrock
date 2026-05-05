@@ -22,15 +22,11 @@ in plain English in a web UI, and the platform:
 
 Try one of these prompts:
 
-- `"do a million inserts and let aurora scale"` — pushes Aurora hard
-  enough to scale 0.5 → 3+ ACU; takes ~3 minutes; the chart fills in
-  live as the cluster ramps up.
-- `"do a million inserts in 5 seconds"` — the **honest-clamp**
-  showcase: Bedrock surfaces a yellow banner explaining that
-  ~3,000 inserts/sec is the realistic ceiling and clamps to 15,000
-  rows; the summary opens by acknowledging the gap.
-- `"insert 30,000 rows in 60 seconds"` — a normal achievable run; no
-  banner, full chart, mid-range ACU.
+- **`"insert 30,000 rows in 15 seconds"`** — a clean, fast run. Bedrock parses the prompt, the workload runs against Aurora, and the chart fills in live as it goes. Good first try to see the full pipeline end-to-end.
+
+- **`"do a sustained workload for 90 seconds"`** — the **scaling demo**: Aurora visibly scales 1.0 → 2.7+ ACU live in the chart as the cluster ramps up to handle the sustained pressure. The headline run.
+
+- **`"do a million inserts in 5 seconds"`** — the **honest-feedback** showcase (ADR-011): the ask is unrealistic (1M rows / 5s = 200k inserts/sec, well above what one Lambda can do), so Bedrock caps the request to a realistic target and surfaces a yellow banner explaining what was changed and why. The run still completes successfully at the capped target; Bedrock's summary opens by acknowledging the gap. The platform never silently changes user input — it tells you what it did.
 
 ![Workload Lab UI showing the live-narrating run experience](docs/screenshots/hero-live-narrating.png)
 
