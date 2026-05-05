@@ -14,7 +14,14 @@ in plain English in a web UI, and the platform:
 4. Calls Bedrock a second time to write a plain-English summary of what
    actually happened — and is honest about it: "the cluster did not
    scale" when no scaling happened, and a yellow banner explains any
-   user-input clamping (ADR-011).
+   user-input *clamping* (ADR-011).
+
+> **Clamp** *(verb)*: when the platform adjusts a number you stated to
+> fit a real constraint — e.g., asking for "1,000,000 rows in 5 seconds"
+> gets clamped to 15,000 rows, because a single Lambda over psycopg
+> tops out near 3,000 inserts/sec. The platform never clamps silently:
+> Bedrock writes a one-sentence explanation, the UI shows a yellow
+> banner, and the run summary's first sentence acknowledges the gap.
 
 ## Live demo
 
