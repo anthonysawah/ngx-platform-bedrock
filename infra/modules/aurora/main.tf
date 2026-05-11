@@ -77,6 +77,14 @@ resource "aws_rds_cluster" "this" {
   backup_retention_period = var.backup_retention_days
   preferred_backup_window = "03:00-04:00"
 
+  # Forward Postgres slow-query + general logs to CloudWatch — pairs with
+  # the parameter group's log_min_duration_statement = 1000 (slow queries).
+  enabled_cloudwatch_logs_exports = ["postgresql"]
+
+  # Tags from the default_tags provider config + module tags propagate to
+  # any snapshot taken from this cluster.
+  copy_tags_to_snapshot = true
+
   # v1 demo: tear-down friendly. Production must flip both.
   skip_final_snapshot = true
   deletion_protection = false
@@ -98,8 +106,9 @@ resource "aws_rds_cluster_instance" "writer" {
   engine_version     = aws_rds_cluster.this.engine_version
   instance_class     = "db.serverless"
 
-  publicly_accessible = false
-  apply_immediately   = true
+  publicly_accessible        = false
+  apply_immediately          = true
+  auto_minor_version_upgrade = true
 
   tags = {
     Name = "${var.name_prefix}-aurora-writer"

@@ -1,0 +1,80 @@
+# Checkov configuration for the AI-Driven Database Workload Lab.
+#
+# The CI workflow runs `checkov` with `soft_fail: true` (findings annotate
+# the run but don't fail the build). This file silences the specific
+# checks that fire because of *intentional* v1 trade-offs already
+# documented in DECISIONS.md and the README's "Known limitations (v1)"
+# / "What's next (v1.5)" sections.
+#
+# Every skip below points at the doc that justifies it. If a new check
+# starts firing, it should NOT be added here without a corresponding
+# entry in DECISIONS.md or a real fix.
+
+framework:
+  - terraform
+
+# Directories Checkov should ignore. .terraform/ contains downloaded
+# provider code; not our infrastructure-as-code.
+skip-path:
+  - .terraform/
+
+# Intentional v1 deferrals. Each pair: check id + why.
+skip-check:
+  # --- KMS Customer-Managed Keys ---
+  # v1 uses AWS-managed keys on Aurora storage, DynamoDB, Secrets Manager.
+  # CMK migration is in README "What's next (v1.5)" and DECISIONS.md
+  # "Customer-managed KMS keys (CMKs)" gap. Migration requires resource
+  # replacement so it's an early-v2 item, not a v1 fix.
+  - CKV_AWS_119   # DynamoDB CMK
+  - CKV_AWS_327   # RDS Cluster CMK
+  - CKV_AWS_321   # RDS Cluster log capture KMS (paired with the CMK migration)
+  - CKV_AWS_158   # CloudWatch Log Group KMS (same migration)
+  - CKV2_AWS_64   # KMS key has policy defined (no CMKs in v1)
+
+  # --- IAM auth for Postgres ---
+  # v1 uses Secrets-Manager-stored master credentials (AWS-managed via
+  # manage_master_user_password, see ADR-007). IAM database authentication
+  # is a v1.5 item — see README "What's next (v1.5)" / DECISIONS gap.
+  - CKV_AWS_162
+
+  # --- Aurora deletion protection ---
+  # Explicitly disabled in v1 so `terraform destroy` works for the demo
+  # teardown. Module comment ("v1 demo: tear-down friendly. Production
+  # must flip both.") + README teardown section.
+  - CKV_AWS_139
+
+  # --- Performance Insights / enhanced monitoring ---
+  # Cost/complexity trade-off for a single-day demo on a personal
+  # account. CloudWatch ServerlessDatabaseCapacity gives us the ACU
+  # story; Performance Insights is the v1.5+ depth tier. ADR-008 +
+  # README "Known limitations (v1)".
+  - CKV_AWS_353   # Performance Insights
+  - CKV_AWS_118   # Enhanced monitoring
+
+  # --- CloudWatch log retention ---
+  # v1 sets 14 days on the Lambda + API GW + Aurora log groups (cost
+  # trade-off). Checkov wants ≥ 1 year. Documented in observability
+  # module variables (log_retention_days default 14).
+  - CKV_AWS_338
+
+  # --- VPC default SG egress ---
+  # Default SG on a new VPC; we never use it. Our Lambda + Aurora SGs
+  # are explicit (no 0.0.0.0/0 ingress; egress narrowed). Touching the
+  # default SG with a tf-managed rule adds a no-op resource.
+  - CKV2_AWS_12
+
+  # --- S3 access logging on the UI bucket ---
+  # CloudFront access logs cover the read path; bucket access logs
+  # would double-log without adding new signal at v1 scope. v1.5 with
+  # multi-tenant content could revisit.
+  - CKV_AWS_18
+  - CKV2_AWS_61    # Lifecycle rules on the UI bucket
+  - CKV2_AWS_62    # Notification config on the UI bucket
+
+  # --- WAF on the API/CloudFront ---
+  # No public auth boundary in v1 (the UI is unauthenticated behind
+  # CloudFront, risk accepted in README "Known limitations"). WAF +
+  # auth is a v1.5 hardening bundle.
+  - CKV2_AWS_47    # CloudFront WAF
+  - CKV_AWS_68     # CloudFront WAF on the distribution
+  - CKV2_AWS_29    # API Gateway WAF

@@ -41,10 +41,10 @@ jobs:
     outputs:
       zip-sha256: ${{ steps.hash.outputs.sha }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v3
+        uses: astral-sh/setup-uv@v6
         with:
           version: "0.5.x"
 
@@ -62,7 +62,7 @@ jobs:
         run: echo "sha=$(sha256sum app/build/lambda.zip | cut -d ' ' -f1)" >> "$GITHUB_OUTPUT"
 
       - name: Upload zip artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: lambda-zip
           path: app/build/lambda.zip
@@ -72,7 +72,7 @@ jobs:
     name: Terraform validate (no AWS auth)
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
