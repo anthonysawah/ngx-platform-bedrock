@@ -87,35 +87,35 @@ module "observability" {
 resource "aws_ssm_parameter" "bedrock_model_id" {
   name        = "${local.ssm_prefix}/bedrock-model-id"
   description = "Bedrock inference profile ARN for ngx-workload-lab."
-  type        = "String"
+  type        = "SecureString"
   value       = local.bedrock_inference_profile_arn
 }
 
 resource "aws_ssm_parameter" "aurora_cluster_identifier" {
   name        = "${local.ssm_prefix}/aurora-cluster-identifier"
   description = "Aurora cluster identifier (input for describe-db-clusters ACU sampling)."
-  type        = "String"
+  type        = "SecureString"
   value       = module.aurora.cluster_identifier
 }
 
 resource "aws_ssm_parameter" "aurora_cluster_endpoint" {
   name        = "${local.ssm_prefix}/aurora-cluster-endpoint"
   description = "Aurora writer endpoint hostname for psycopg connections."
-  type        = "String"
+  type        = "SecureString"
   value       = module.aurora.cluster_endpoint
 }
 
 resource "aws_ssm_parameter" "aurora_secret_arn" {
   name        = "${local.ssm_prefix}/aurora-secret-arn"
   description = "Secrets Manager ARN holding Aurora master credentials."
-  type        = "String"
+  type        = "SecureString"
   value       = module.aurora.master_user_secret_arn
 }
 
 resource "aws_ssm_parameter" "dynamodb_table_name" {
   name        = "${local.ssm_prefix}/dynamodb-table-name"
   description = "DynamoDB table name for runs + per-second metrics."
-  type        = "String"
+  type        = "SecureString"
   value       = module.dynamodb.table_name
 }
 

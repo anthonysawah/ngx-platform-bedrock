@@ -30,11 +30,6 @@ on:
 env:
   TF_VERSION: 1.9.8
   ENV_DIR: infra/envs/dev
-  # Pinned actions (hashicorp/setup-terraform@v3, astral-sh/setup-uv@v6)
-  # still bundle Node 20 at their current major. Force Node 24 to
-  # silence the runner's deprecation warnings; the default flips
-  # June 2, 2026 anyway.
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 permissions:
   contents: read
@@ -48,10 +43,13 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      # Direct curl install instead of astral-sh/setup-uv to avoid the
+      # action's internal Node 20 runtime. Astral's canonical install
+      # script; pinned uv at the venv-creation step below.
       - name: Install uv
-        uses: astral-sh/setup-uv@v6
-        with:
-          version: "0.5.x"
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
       - name: Provision Python 3.12 venv (target manylinux2014_aarch64 wheels)
         run: |
@@ -79,11 +77,14 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_version: ${{ env.TF_VERSION }}
-          terraform_wrapper: false
+      # Direct binary install instead of hashicorp/setup-terraform to
+      # avoid the action's internal Node 20 runtime.
+      - name: Install Terraform ${{ env.TF_VERSION }}
+        run: |
+          wget -q "https://releases.hashicorp.com/terraform/${TF_VERSION}/terraform_${TF_VERSION}_linux_amd64.zip"
+          unzip -q "terraform_${TF_VERSION}_linux_amd64.zip"
+          sudo mv terraform /usr/local/bin/
+          terraform version
 
       - name: terraform fmt -check
         run: terraform fmt -recursive -check infra/

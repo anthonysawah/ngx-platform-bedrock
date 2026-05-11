@@ -30,6 +30,8 @@ skip-check:
   - CKV_AWS_321   # RDS Cluster log capture KMS (paired with the CMK migration)
   - CKV_AWS_158   # CloudWatch Log Group KMS (same migration)
   - CKV2_AWS_64   # KMS key has policy defined (no CMKs in v1)
+  - CKV_AWS_337   # SSM Parameter CMK (params are SecureString-encrypted with the
+                  # AWS-managed aws/ssm key; CMK migration would swap to a CMK)
 
   # --- IAM auth for Postgres ---
   # v1 uses Secrets-Manager-stored master credentials (AWS-managed via
@@ -117,3 +119,35 @@ skip-check:
   # the value regardless; v1 demo is unauthenticated behind CloudFront,
   # v1.5 wires Cognito (README "Known limitations").
   - CKV_AWS_309
+
+  # --- Round 3 deferrals (see DECISIONS "Known v1.5 gaps") ---
+  # CloudFront custom SSL cert — same root as CKV_AWS_174. The default
+  # CloudFront cert ships TLS 1.2 via the edge; checkov flags any use
+  # of the default cert. Custom cert needs a domain we don't own in v1.
+  - CKV2_AWS_42
+
+  # VPC flow logs — adds a CloudWatch log group + IAM role + flow-log
+  # resource for traffic introspection. Cost + complexity not worth it
+  # for a single-day demo; v1.5 hardening item.
+  - CKV2_AWS_11
+
+  # RDS Backup plan via AWS Backup — separate service with its own
+  # selection + plan resources. Aurora already has 1-day automated
+  # backups (backup_retention_period); AWS Backup is for cross-account /
+  # cross-region retention which is a v1.5+ availability story.
+  - CKV2_AWS_8
+
+  # S3 cross-region replication on the UI bucket — v1.5 multi-region
+  # story. Single-region demo bucket with versioning + SSE is fine.
+  - CKV_AWS_144
+
+  # S3 bucket KMS encryption (vs AES256) — paired with the CMK
+  # migration above. SSE-S3 (AES256) is currently used.
+  - CKV_AWS_145
+
+  # Postgres query logging — Aurora parameter group already sets
+  # log_min_duration_statement = 1000 (slow queries to CloudWatch).
+  # CKV2_AWS_27 wants log_statement = 'all' which is overkill
+  # (every statement logged); demo runs are bounded so the slow-query
+  # log is enough. v1.5 with prod traffic would revisit.
+  - CKV2_AWS_27
