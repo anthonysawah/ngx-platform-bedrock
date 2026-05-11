@@ -12,6 +12,14 @@ concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
+env:
+  # Some pinned actions (hashicorp/setup-terraform@v3, astral-sh/setup-uv@v6)
+  # still bundle Node 20 even at their current major. Forcing Node 24
+  # silences the runner's deprecation warnings without action-version
+  # archaeology. GitHub flips this default on June 2, 2026; this just
+  # opts in early.
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
 jobs:
   python:
     name: Python — ruff + pytest

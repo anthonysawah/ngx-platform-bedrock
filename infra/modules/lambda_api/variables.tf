@@ -40,6 +40,17 @@ variable "timeout_seconds" {
   }
 }
 
+variable "reserved_concurrency" {
+  type        = number
+  description = "Reserved concurrent executions. Caps how many invocations of this function can run in parallel, protecting the account-wide concurrency pool. Single HTTP + 1 async worker per workload means 10 is plenty for the demo."
+  default     = 10
+
+  validation {
+    condition     = var.reserved_concurrency >= 1
+    error_message = "reserved_concurrency must be >= 1."
+  }
+}
+
 variable "log_retention_days" {
   type        = number
   description = "CloudWatch log retention for both Lambda and API GW access logs."

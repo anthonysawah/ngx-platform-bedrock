@@ -282,6 +282,12 @@ resource "aws_lambda_function" "this" {
   memory_size = var.memory_mb
   timeout     = var.timeout_seconds
 
+  # Cap blast radius from runaway async self-invocations or surprise
+  # POST volume. The function does HTTP traffic + 1 async worker per
+  # workload; 10 reserved is plenty and stops the account-wide
+  # concurrency pool from being drained by this function alone.
+  reserved_concurrent_executions = var.reserved_concurrency
+
   vpc_config {
     subnet_ids         = var.private_subnet_ids
     security_group_ids = [aws_security_group.lambda.id]
@@ -343,6 +349,11 @@ resource "aws_apigatewayv2_route" "default" {
   api_id    = aws_apigatewayv2_api.this.id
   route_key = "$default"
   target    = "integrations/${aws_apigatewayv2_integration.lambda.id}"
+  # Explicit "NONE" rather than implicit absence so the route's auth
+  # posture is intentional and reviewable. v1 demo runs unauthenticated
+  # behind CloudFront (risk accepted in README "Known limitations");
+  # v1.5 wires Cognito or a custom Lambda authorizer.
+  authorization_type = "NONE"
 }
 
 resource "aws_apigatewayv2_stage" "default" {
