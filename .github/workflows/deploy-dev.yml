@@ -30,6 +30,11 @@ on:
 env:
   TF_VERSION: 1.9.8
   ENV_DIR: infra/envs/dev
+  # Pinned actions (hashicorp/setup-terraform@v3, astral-sh/setup-uv@v6)
+  # still bundle Node 20 at their current major. Force Node 24 to
+  # silence the runner's deprecation warnings; the default flips
+  # June 2, 2026 anyway.
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 permissions:
   contents: read

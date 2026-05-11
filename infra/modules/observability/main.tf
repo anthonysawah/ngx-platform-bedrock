@@ -11,6 +11,11 @@
 resource "aws_sns_topic" "alerts" {
   name = "${var.name_prefix}-alerts"
 
+  # Encrypt messages at rest with the AWS-managed SNS KMS key. v1 uses
+  # AWS-managed; the v1.5 CMK migration captured in README "Known
+  # limitations" would swap this for a customer-managed key.
+  kms_master_key_id = "alias/aws/sns"
+
   tags = {
     Name = "${var.name_prefix}-alerts"
   }
