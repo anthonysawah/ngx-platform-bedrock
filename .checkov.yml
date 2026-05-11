@@ -151,3 +151,4 @@ skip-check:
   # (every statement logged); demo runs are bounded so the slow-query
   # log is enough. v1.5 with prod traffic would revisit.
   - CKV2_AWS_27
+
