@@ -42,12 +42,22 @@ variable "timeout_seconds" {
 
 variable "reserved_concurrency" {
   type        = number
-  description = "Reserved concurrent executions. Caps how many invocations of this function can run in parallel, protecting the account-wide concurrency pool. Single HTTP + 1 async worker per workload means 10 is plenty for the demo."
-  default     = 10
+  description = <<-EOT
+    Reserved concurrent executions, or -1 for no reservation (AWS default).
+
+    Defaults to -1 because this AWS account's total Lambda concurrency limit
+    is 10 (new accounts are throttled below the usual 1000 until AWS raises
+    it). AWS rejects any reservation that would drop UnreservedConcurrentExecutions
+    below 10, so on a 10-limit account *no* positive reservation is possible.
+    Checkov CKV_AWS_115 wants a reservation here; skipped with this reason.
+
+    Set a positive value once the account limit is raised.
+  EOT
+  default     = -1
 
   validation {
-    condition     = var.reserved_concurrency >= 1
-    error_message = "reserved_concurrency must be >= 1."
+    condition     = var.reserved_concurrency == -1 || var.reserved_concurrency >= 1
+    error_message = "reserved_concurrency must be -1 (no reservation) or >= 1."
   }
 }
 
