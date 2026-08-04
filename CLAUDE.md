@@ -14,8 +14,9 @@ lookups"), and the platform:
    duration).
 2. Executes the workload against an Aurora Serverless v2 Postgres cluster
    that auto-scales ACUs under load.
-3. Streams per-second metrics (rows/sec, latency p50/p95, current ACU count)
-   into DynamoDB; the UI polls and renders a live chart.
+3. Streams per-second metrics (rows/sec, latency p50/p95) into DynamoDB;
+   the API Lambda overlays the CloudWatch ACU series at read time and the
+   UI polls and renders a live chart.
 4. When the run ends, Bedrock writes a plain-English summary
    ("inserted 50k rows in 47s, p95 latency 12ms, cluster scaled from 0.5 to
    2 ACUs at second 18").
@@ -120,9 +121,12 @@ zero egress to still authenticate to Postgres.
 - FastAPI for routing, Pydantic v2 for I/O models.
 - Mangum as the Lambda -> ASGI adapter.
 - Module layout under `app/src/ngx_workload_lab/`:
-  - `main.py` — FastAPI routes, Mangum handler, request middleware
+  - `main.py` — API Lambda: FastAPI routes, Mangum handler, summary finalize
+  - `executor.py` — executor Lambda entry point (in VPC, zero egress)
   - `bedrock.py` — Converse client + system prompts + Pydantic validation
-  - `workload.py` — Aurora connection pool, INSERT/SELECT executor, ACU sampling
+  - `workload.py` — Aurora pool (IAM-token DSN), INSERT/SELECT executor
+  - `acu.py` — CloudWatch ACU series fetch + overlay (read time)
+  - `bootstrap.py` — one-time rds_iam grant (break-glass, ADR-013)
   - `storage.py` — DynamoDB put/query helpers
   - `config.py` — SSM/Secrets Manager loader, cached at module import
   - `models.py` — shared Pydantic models (`WorkloadSpec`, `RunRecord`, etc.)
@@ -167,8 +171,11 @@ zero egress to still authenticate to Postgres.
 
 ## Observability
 
-- Lambda: structured logs, X-Ray tracing on, dead-letter SQS for async
-  failures, CloudWatch alarm on `Errors >= 1` in 5 min -> SNS.
+- API Lambda: structured logs, X-Ray Active, dead-letter SQS, CloudWatch
+  alarm on `Errors >= 1` in 5 min -> SNS. Executor Lambda: structured
+  logs only — no DLQ (SQS has no gateway endpoint) and X-Ray
+  PassThrough (no egress for the daemon); its error surface is the
+  `workload_error` RunRecord (ADR-013).
 - Aurora: alarm on `ServerlessDatabaseCapacity` at max for > 2 min -> SNS.
 - DynamoDB: on-demand, so we watch `ThrottledRequests` (alarm if > 0).
 - One CloudWatch dashboard, Terraformed, covering all of the above plus
@@ -195,8 +202,9 @@ zero egress to still authenticate to Postgres.
 
 - **Auth on the UI.** v1 demo URL is unauthenticated behind CloudFront.
   Risk acknowledged in `DECISIONS.md`. v1.5: Cognito or signed URLs.
-- **Async workload execution.** v1 runs workloads synchronously in the
-  Lambda invocation, capped at 60s. v1.5: Step Functions or SQS.
+- **Workloads longer than 180s.** Runs execute async on the executor
+  Lambda (ADR-012/013), schema-capped at 5..180s. v1.5: Step Functions
+  for longer orchestrations.
 - ~~**IAM auth for Postgres.**~~ Shipped in ADR-013. The executor connects
   as `workload_app` using a signed IAM token. Note: never grant `rds_iam`
   to the master user -- in Postgres that disables password auth for the
@@ -215,7 +223,8 @@ zero egress to still authenticate to Postgres.
 - **WorkloadSpec:** the validated, typed shape produced by the intent parser.
   Fields: `workload_type` ("insert"|"select"|"mixed"), `row_count` (1..100000),
   `mix_ratio` (0..1, fraction of operations that are SELECT),
-  `duration_seconds` (5..60), `table_name` (allowlisted).
+  `duration_seconds` (5..180, hard cap), `table_name` (allowlisted),
+  `original_prompt` (server-set verbatim), `clamp_notes` (ADR-011).
 - **ACU (Aurora Capacity Unit):** Aurora Serverless v2's scaling unit.
   Visible in `describe_db_clusters -> ServerlessV2ScalingConfiguration` and
   CloudWatch `ServerlessDatabaseCapacity`.

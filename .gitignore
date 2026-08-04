@@ -45,3 +45,6 @@ Thumbs.db
 
 # Claude Code worktree metadata
 .claude/
+
+# draw.io backup files
+.$*.bkp

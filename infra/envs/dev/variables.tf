@@ -32,3 +32,17 @@ variable "alarm_email" {
   default     = ""
   sensitive   = true
 }
+
+variable "enable_internet_egress" {
+  type        = bool
+  description = <<-EOT
+    Break-glass toggle (ADR-013). true restores the IGW + public subnets +
+    NAT gateway AND grants the executor SG temporary 443 egress to
+    0.0.0.0/0 so it can reach Secrets Manager for the one-time
+    {"_ngx_bootstrap": true} rds_iam grant. Both halves are required —
+    NAT alone is not enough, because the executor SG's only 443 egress
+    normally targets the S3/DynamoDB gateway-endpoint prefix lists.
+    Flip back to false immediately after bootstrapping.
+  EOT
+  default     = false
+}

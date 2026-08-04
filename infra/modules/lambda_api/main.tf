@@ -97,6 +97,20 @@ resource "aws_vpc_security_group_egress_rule" "executor_to_gateway_endpoints" {
   prefix_list_id    = var.gateway_endpoint_prefix_list_ids[count.index]
 }
 
+# Break-glass only (ADR-013): exists solely while enable_bootstrap_egress
+# is true, so the {"_ngx_bootstrap": true} invoke can reach Secrets Manager
+# via the temporarily-restored NAT. Destroyed again when the toggle flips off.
+resource "aws_vpc_security_group_egress_rule" "executor_bootstrap_https" {
+  count = var.enable_bootstrap_egress ? 1 : 0
+
+  security_group_id = aws_security_group.executor.id
+  description       = "TEMPORARY break-glass egress for IAM bootstrap (Secrets Manager via NAT)"
+  ip_protocol       = "tcp"
+  from_port         = 443
+  to_port           = 443
+  cidr_ipv4         = "0.0.0.0/0"
+}
+
 resource "aws_vpc_security_group_ingress_rule" "aurora_from_executor" {
   security_group_id            = var.aurora_security_group_id
   description                  = "Aurora Postgres from executor Lambda SG only."

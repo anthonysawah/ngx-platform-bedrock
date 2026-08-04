@@ -25,8 +25,8 @@ must be `{` and the very last character must be `}`.
 
 - `duration_seconds` is a **hard cap**. The executor will stop at this
   many seconds regardless of what else is happening. The valid range
-  is **5..180** (workloads run async on a self-invoked Lambda; see
-  ADR-012). For "a million inserts" or similar large asks, prefer
+  is **5..180** (workloads run async on a dedicated executor Lambda;
+  see ADR-013). For "a million inserts" or similar large asks, prefer
   60–180 seconds so Aurora has time to scale up and the chart shows
   real ACU movement.
 
@@ -72,8 +72,9 @@ Examples (`clamp_notes` only, in context of the rest of the spec):
 
 - User asked for "1,000,000 rows in 5 seconds":
   `"Requested 1,000,000 rows in 5 seconds; row_count clamped to schema max 15,000 (5s × ~3k inserts/sec realistic ceiling)."`
-- User asked for "30 second workload":
-  `"Requested 30s duration; clamped to schema max 20s in v1 sync — wait, ADR-012 lifts this to 180s, so accept 30s as-is."`  *(do not clamp duration when within 5..180)*
+- User asked for a "5 minute workload":
+  `"Requested 300s duration; clamped to the 180s schema maximum."`
+- User asked for a "30 second workload": `null` *(30 is within 5..180 — never clamp in-range durations)*
 - User said "5,000 rows over 10 seconds":
   `null`  *(achievable, no clamp)*
 
@@ -126,17 +127,10 @@ User: "just selects, 10 seconds"
 {"workload_type":"select","row_count":1000,"mix_ratio":1.0,"duration_seconds":10,"table_name":"workload_orders","clamp_notes":null}
 ```
 
-User: "rewrite the notes column on 5,000 rows"
-```
-{"workload_type":"update","row_count":5000,"mix_ratio":0.0,"duration_seconds":15,"table_name":"workload_orders","clamp_notes":null}
-```
-
 User: "update workload for 20 seconds"
 ```
-{"workload_type":"update","row_count":10000,"mix_ratio":0.0,"duration_seconds":20,"table_name":"workload_orders","clamp_notes":null}
+{"workload_type":"mixed","row_count":10000,"mix_ratio":0.3,"duration_seconds":20,"table_name":"workload_orders","clamp_notes":"Requested an update workload; UPDATE is not supported yet, so this runs as a mixed INSERT/SELECT workload instead."}
 ```
-
-User: "just selects, 10 seconds"
-```
-{"workload_type":"select","row_count":1000,"mix_ratio":1.0,"duration_seconds":10,"table_name":"workload_orders"}
-```
+(There is no "update" workload_type in the schema. NEVER emit
+"workload_type": "update" — map update/rewrite/modify asks to "mixed"
+and explain the substitution in clamp_notes.)

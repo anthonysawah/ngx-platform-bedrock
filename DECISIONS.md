@@ -562,6 +562,11 @@ mechanism rather than adding new fields.
 
 ## ADR-012 — Async self-invoke for workload execution
 
+> **Superseded by ADR-013.** The async kickoff + poll lifecycle this ADR
+> introduced survives unchanged, but the *self*-invoke is gone: the API
+> Lambda now invokes a dedicated in-VPC executor function instead of
+> itself. ADR-012 stays in the record as the reasoning for going async.
+
 **Context.** ADR-008/009 capped `duration_seconds` at 5..20 because the
 synchronous request path was bounded by API Gateway HTTP API's 30-second
 integration timeout. That cap meant single-run workloads could not run
@@ -767,8 +772,11 @@ existed.
   competing; still the right move between demo cycles.
 
 **Consequences.**
-- Idle cost drops from **~$60/mo to ~$0.60/mo** — Secrets Manager $0.40 plus
-  Aurora storage $0.20. Per-run cost is roughly $0.02.
+- Idle cost drops from **~$82/mo (measured steady state: $2.72/day) to
+  ~$0.58/mo** — Secrets Manager $0.40 plus Aurora storage $0.18. Per-run
+  cost is roughly $0.07 (ACU while awake + storage IO + Bedrock tokens).
+  *(Earlier drafts said "~$60 → ~$0.60"; the July bill was a partial
+  month. Figures above are from Cost Explorer daily data, Jul 30–Aug 2.)*
 - Aurora now has **no network path to the internet whatsoever**. Deleting
   the IGW and public subnets means it is unreachable by construction rather
   than by security-group policy. Strictly better posture than v1.
@@ -788,10 +796,14 @@ existed.
 master password from Secrets Manager, which the executor can no longer
 reach. If the grant is ever lost (cluster restore, dropped role):
 
-1. Set `enable_internet_egress = true` in the `vpc` module and apply — this
-   recreates the IGW, public subnets, and NAT in one step.
+1. Apply with `-var='enable_internet_egress=true'` (env-level toggle).
+   This recreates the IGW, public subnets and NAT **and** adds a
+   temporary 443→0.0.0.0/0 egress rule to the executor SG — both are
+   required: NAT alone is useless because the executor's normal 443
+   egress targets only the gateway-endpoint prefix lists.
 2. Invoke the executor with `{"_ngx_bootstrap": true}`.
-3. Set the flag back to `false` and apply again.
+3. Apply again without the var; NAT and the temporary SG rule are
+   destroyed together.
 
 Roughly ten minutes of NAT charges, a few cents. The alternative — leaving a
 permanent Secrets Manager endpoint at $7.20/mo for an operation run once —
