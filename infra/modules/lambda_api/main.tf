@@ -218,6 +218,21 @@ data "aws_iam_policy_document" "lambda_inline" {
     resources = ["*"]
   }
 
+  # IAM database authentication. Scoped to one cluster + one DB user, which
+  # is as tight as rds-db:connect gets. The auth token is minted by local
+  # SigV4 signing (no network call), which is what lets the executor run in
+  # a private subnet with no NAT and no interface endpoints.
+  statement {
+    sid    = "RdsIamDbConnect"
+    effect = "Allow"
+    actions = [
+      "rds-db:connect",
+    ]
+    resources = [
+      "arn:aws:rds-db:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:dbuser:${var.aurora_cluster_resource_id}/${var.aurora_iam_db_user}",
+    ]
+  }
+
   # X-Ray actions also do not support resource-level permissions. ADR-006.
   statement {
     sid    = "XrayTraceWrite"

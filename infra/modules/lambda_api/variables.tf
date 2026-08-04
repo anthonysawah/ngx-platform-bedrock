@@ -71,6 +71,17 @@ variable "aurora_security_group_id" {
   description = "Aurora SG. Module emits an aws_security_group_rule allowing 5432 ingress from the Lambda SG into this SG."
 }
 
+variable "aurora_cluster_resource_id" {
+  type        = string
+  description = "Aurora cluster resource ID (cluster-XXXX...). Used to scope the rds-db:connect ARN for IAM database authentication."
+}
+
+variable "aurora_iam_db_user" {
+  type        = string
+  description = "Database role granted rds_iam. Deliberately NOT the master user — granting rds_iam disables password auth for that role, which would remove break-glass access."
+  default     = "workload_app"
+}
+
 variable "aurora_cluster_arn" {
   type        = string
   description = "Aurora cluster ARN. Used for tagging; rds:DescribeDBClusters does not honor resource ARN (ADR-006)."

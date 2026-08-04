@@ -131,9 +131,10 @@ module "lambda_api" {
   private_subnet_ids = module.vpc.private_subnet_ids
   lambda_zip_path    = local.lambda_zip_path
 
-  aurora_secret_arn        = module.aurora.master_user_secret_arn
-  aurora_security_group_id = module.aurora.security_group_id
-  aurora_cluster_arn       = module.aurora.cluster_arn
+  aurora_secret_arn          = module.aurora.master_user_secret_arn
+  aurora_security_group_id   = module.aurora.security_group_id
+  aurora_cluster_arn         = module.aurora.cluster_arn
+  aurora_cluster_resource_id = module.aurora.cluster_resource_id
 
   ssm_path_prefix = local.ssm_prefix
 
