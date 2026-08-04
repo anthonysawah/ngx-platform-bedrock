@@ -34,6 +34,9 @@ module "vpc" {
   vpc_cidr           = "10.20.0.0/16"
   availability_zones = slice(data.aws_availability_zones.available.names, 0, 2)
   single_nat_gateway = true
+
+  # Break-glass only — see var.enable_internet_egress.
+  enable_internet_egress = var.enable_internet_egress
 }
 
 module "aurora" {
@@ -137,6 +140,7 @@ module "lambda_api" {
   aurora_cluster_resource_id = module.aurora.cluster_resource_id
 
   gateway_endpoint_prefix_list_ids = module.vpc.gateway_endpoint_prefix_list_ids
+  enable_bootstrap_egress          = var.enable_internet_egress
 
   ssm_path_prefix = local.ssm_prefix
 

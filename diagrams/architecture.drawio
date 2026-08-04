@@ -1,0 +1,106 @@
+<mxfile host="app.diagrams.net" modified="2026-08-04T05:00:00.000Z" agent="hand-authored" version="24.7.0" type="device">
+  <diagram id="aws-detail" name="AWS architecture (post ADR-013)">
+    <mxGraphModel dx="1600" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1540" pageHeight="960" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="title" value="AI-Driven Database Workload Lab — architecture after ADR-013 (no NAT, IAM DB auth, scale-to-zero)" style="text;html=1;fontSize=20;fontStyle=1;align=left;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="40" y="20" width="1100" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="subtitle" value="Idle cost ≈ $0.58/mo (was ~$82/mo) · deleted: NAT gateway, Elastic IP, Internet Gateway, public subnets" style="text;html=1;fontSize=13;fontColor=#666666;align=left;" vertex="1" parent="1">
+          <mxGeometry x="40" y="52" width="1100" height="20" as="geometry" />
+        </mxCell>
+
+        <mxCell id="browser" value="Browser" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F5F5F5;strokeColor=#666666;fontSize=13;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="120" width="120" height="50" as="geometry" />
+        </mxCell>
+
+        <mxCell id="cf" value="CloudFront&#10;(security headers, OAC)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F2E6FF;strokeColor=#8C4FFF;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="230" y="100" width="170" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="s3ui" value="S3 (private bucket)&#10;static UI" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E9F0DC;strokeColor=#7AA116;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="450" y="100" width="150" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="apigw" value="API Gateway HTTP API&#10;(CORS: CloudFront origin only)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F2E6FF;strokeColor=#8C4FFF;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="230" y="200" width="170" height="55" as="geometry" />
+        </mxCell>
+
+        <mxCell id="apilambda" value="API Lambda — ai-workload-lab-dev-api&#10;OUTSIDE the VPC · python3.12 / arm64&#10;HTTP · Bedrock parse + summarize · ACU overlay" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FCE3CF;strokeColor=#ED7100;fontSize=12;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="450" y="190" width="300" height="75" as="geometry" />
+        </mxCell>
+
+        <mxCell id="bedrock" value="Bedrock Runtime&#10;Claude Sonnet 4.6 (Converse)&#10;intent parser + run summary" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DFF5F0;strokeColor=#01A88D;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="850" y="110" width="200" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="ssm" value="SSM Parameter Store&#10;(config plane)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FBE4E9;strokeColor=#DD344C;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="850" y="190" width="200" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="cw" value="CloudWatch&#10;ServerlessDatabaseCapacity series&#10;(overlaid on metrics at read time)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FBE4E9;strokeColor=#DD344C;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="850" y="252" width="200" height="58" as="geometry" />
+        </mxCell>
+        <mxCell id="ddb" value="DynamoDB — ai-workload-lab-dev-runs&#10;run headers + per-second metrics&#10;(on-demand, always-free tier)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DCE9FB;strokeColor=#527FFF;fontSize=12;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="850" y="360" width="230" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="secrets" value="Secrets Manager&#10;AWS-managed master secret&#10;(break-glass bootstrap only)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FBE4E9;strokeColor=#DD344C;fontSize=12;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="860" y="700" width="220" height="60" as="geometry" />
+        </mxCell>
+
+        <mxCell id="vpc" value="VPC 10.20.0.0/16 — private subnets only · NO Internet Gateway · NO NAT · NO public subnets" style="rounded=1;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#8C4FFF;dashed=1;strokeWidth=2;verticalAlign=top;fontSize=13;fontStyle=1;fontColor=#8C4FFF;align=left;spacingLeft=10;spacingTop=6;" vertex="1" parent="1">
+          <mxGeometry x="120" y="400" width="660" height="420" as="geometry" />
+        </mxCell>
+
+        <mxCell id="executor" value="Executor Lambda — ai-workload-lab-dev-executor&#10;python3.12 / arm64 · NO INTERNET PATH&#10;SG egress: Aurora 5432 + gateway-endpoint prefix lists only" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FCE3CF;strokeColor=#ED7100;fontSize=12;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="170" y="460" width="330" height="80" as="geometry" />
+        </mxCell>
+
+        <mxCell id="aurora" value="Aurora Serverless v2 — PostgreSQL 15.17&#10;min 0 ACU (scale-to-zero) → max 4 ACU&#10;pauses when idle · ~15s resume · storage encrypted" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DCE9FB;strokeColor=#527FFF;fontSize=12;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="170" y="620" width="330" height="80" as="geometry" />
+        </mxCell>
+
+        <mxCell id="gwe" value="S3 + DynamoDB gateway endpoints&#10;(free, route-table based)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#EFEFEF;strokeColor=#666666;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="560" y="470" width="190" height="50" as="geometry" />
+        </mxCell>
+
+        <mxCell id="iamnote" value="IAM database authentication:&#10;generate_db_auth_token = local SigV4 signing,&#10;no network call → zero-egress Lambda can still&#10;authenticate. Connects as workload_app (rds_iam).&#10;Master user keeps password auth for break-glass." style="text;html=1;fontSize=11;fontColor=#444444;align=left;verticalAlign=top;spacing=4;fillColor=#FFFBE6;strokeColor=#D4B106;rounded=1;" vertex="1" parent="1">
+          <mxGeometry x="170" y="720" width="330" height="85" as="geometry" />
+        </mxCell>
+
+        <mxCell id="deleted" value="DELETED in ADR-013 — was 96% of the bill:&#10;✕ NAT gateway  $32.40/mo&#10;✕ Elastic IP  $3.60/mo&#10;✕ Aurora idle floor (min 0.5 ACU)  $43.20/mo" style="text;html=1;fontSize=12;fontColor=#B71C1C;align=left;verticalAlign=top;spacing=6;fillColor=#FDECEA;strokeColor=#B71C1C;rounded=1;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="850" y="470" width="300" height="90" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e1" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#666666;" edge="1" parent="1" source="browser" target="cf"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e2" value="OAC" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#8C4FFF;fontSize=10;" edge="1" parent="1" source="cf" target="s3ui"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e3" value="fetch + poll" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#666666;fontSize=10;" edge="1" parent="1" source="browser" target="apigw"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e4" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#ED7100;" edge="1" parent="1" source="apigw" target="apilambda"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e5" value="parse + summarize" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#01A88D;fontSize=10;exitX=1;exitY=0.15;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="apilambda" target="bedrock"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e6" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#DD344C;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="apilambda" target="ssm"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e7" value="ACU series" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#DD344C;fontSize=10;exitX=1;exitY=0.85;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="apilambda" target="cw"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e8" value="headers + reads" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#527FFF;fontSize=10;exitX=0.75;exitY=1;exitDx=0;exitDy=0;entryX=0;entryY=0.3;entryDx=0;entryDy=0;" edge="1" parent="1" source="apilambda" target="ddb"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e9" value="async invoke (run_id + spec)" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#ED7100;strokeWidth=2;fontSize=11;fontStyle=1;" edge="1" parent="1" source="apilambda" target="executor"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e10" value="psycopg over private IP&#10;password = signed IAM token" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#527FFF;strokeWidth=2;fontSize=10;" edge="1" parent="1" source="executor" target="aurora"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e11" value="per-second metric stream" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#527FFF;fontSize=10;" edge="1" parent="1" source="executor" target="gwe"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e12" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#527FFF;dashed=1;" edge="1" parent="1" source="gwe" target="ddb"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e13" value="bootstrap only&#10;(requires temporary egress toggle)" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#DD344C;dashed=1;fontSize=9;exitX=1;exitY=0.9;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="executor" target="secrets"><mxGeometry relative="1" as="geometry" /></mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+  <diagram id="product-flow" name="Product flow (simple)">
+    <mxGraphModel dx="1200" dy="700" grid="1" gridSize="10" page="1" pageScale="1" pageWidth="1200" pageHeight="500">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="p0" value="Developer types:&#10;&quot;insert 50,000 orders&#10;and read some back&quot;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F5F5F5;strokeColor=#666666;fontSize=13;" vertex="1" parent="1"><mxGeometry x="40" y="120" width="200" height="80" as="geometry" /></mxCell>
+        <mxCell id="p1" value="1. Bedrock parses intent&#10;→ typed WorkloadSpec&#10;(honest-clamp if unrealistic)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DFF5F0;strokeColor=#01A88D;fontSize=13;" vertex="1" parent="1"><mxGeometry x="300" y="120" width="210" height="80" as="geometry" /></mxCell>
+        <mxCell id="p2" value="2. Executor drives Aurora&#10;Serverless v2 — watch ACUs&#10;scale live (0 → 4)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DCE9FB;strokeColor=#527FFF;fontSize=13;" vertex="1" parent="1"><mxGeometry x="570" y="120" width="210" height="80" as="geometry" /></mxCell>
+        <mxCell id="p3" value="3. Per-second metrics stream&#10;to DynamoDB → live chart&#10;fills in as it runs" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DCE9FB;strokeColor=#527FFF;fontSize=13;" vertex="1" parent="1"><mxGeometry x="840" y="120" width="210" height="80" as="geometry" /></mxCell>
+        <mxCell id="p4" value="4. Bedrock writes a plain-&#10;English summary — honest&#10;about scaling and clamping" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DFF5F0;strokeColor=#01A88D;fontSize=13;" vertex="1" parent="1"><mxGeometry x="570" y="280" width="210" height="80" as="geometry" /></mxCell>
+        <mxCell id="q1" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" edge="1" parent="1" source="p0" target="p1"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="q2" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" edge="1" parent="1" source="p1" target="p2"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="q3" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" edge="1" parent="1" source="p2" target="p3"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="q4" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" edge="1" parent="1" source="p3" target="p4"><mxGeometry relative="1" as="geometry" /></mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

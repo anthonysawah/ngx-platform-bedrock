@@ -151,3 +151,9 @@ variable "gateway_endpoint_prefix_list_ids" {
   description = "Managed prefix list IDs for the S3/DynamoDB gateway endpoints. The executor SG needs 443 egress to these; without it, gateway-endpoint traffic is dropped by the SG even though the route exists."
   default     = []
 }
+
+variable "enable_bootstrap_egress" {
+  type        = bool
+  description = "Break-glass companion to the vpc module's enable_internet_egress: grants the executor SG 443 egress to 0.0.0.0/0 so the one-time IAM bootstrap can reach Secrets Manager through the temporarily-restored NAT. NAT alone is insufficient — the executor's normal 443 egress targets only the gateway-endpoint prefix lists."
+  default     = false
+}
