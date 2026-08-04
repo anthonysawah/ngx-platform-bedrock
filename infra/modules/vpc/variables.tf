@@ -29,3 +29,17 @@ variable "single_nat_gateway" {
   description = "If true, one NAT in the first public subnet shared across private subnets. v1 demo cost-saver; v1.5 should run one NAT per AZ for HA."
   default     = true
 }
+
+variable "enable_internet_egress" {
+  type        = bool
+  description = <<-EOT
+    Create the IGW, public subnets, Elastic IP(s) and NAT gateway(s) that give
+    private subnets a route to the internet.
+
+    Defaults to false. The NAT gateway plus its Elastic IP cost ~$40/mo billed
+    hourly regardless of traffic -- roughly two thirds of this project's bill --
+    and after the API/executor Lambda split nothing inside the VPC needs egress
+    (ADR-013). Set true to restore it in one apply.
+  EOT
+  default     = false
+}

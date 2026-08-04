@@ -9,7 +9,7 @@ output "vpc_cidr_block" {
 }
 
 output "public_subnet_ids" {
-  description = "Public subnet IDs, ordered to match var.availability_zones."
+  description = "Public subnet IDs. Empty when enable_internet_egress is false (the default) -- public subnets exist only to host a NAT gateway."
   value       = aws_subnet.public[*].id
 }
 
@@ -29,6 +29,6 @@ output "availability_zones" {
 }
 
 output "nat_gateway_ids" {
-  description = "NAT gateway IDs."
+  description = "NAT gateway IDs. Empty when enable_internet_egress is false (the default)."
   value       = aws_nat_gateway.this[*].id
 }

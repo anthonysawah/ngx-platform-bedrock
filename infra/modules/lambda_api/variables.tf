@@ -61,6 +61,12 @@ variable "reserved_concurrency" {
   }
 }
 
+variable "api_timeout_seconds" {
+  type        = number
+  description = "API Lambda timeout. It only parses intent and serves polls now -- the long-running workload moved to the executor -- so 60s is generous. API Gateway caps the integration at 30s regardless."
+  default     = 60
+}
+
 variable "log_retention_days" {
   type        = number
   description = "CloudWatch log retention for both Lambda and API GW access logs."

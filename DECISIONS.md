@@ -676,3 +676,128 @@ trust policy.
 Aurora has `rds.force_ssl=1` (TLS required) but no CI assertion
 prevents drift. v1.5: Terraform test or AWS CLI assertion in the
 deploy workflow.
+
+---
+
+## ADR-013 — Split API/executor Lambdas to delete the NAT gateway
+
+**Context.** The first real AWS bill arrived: **$69.02** across July and early
+August. The breakdown was uncomfortable:
+
+| Usage type | Cost | Quantity |
+| --- | ---: | ---: |
+| `NatGateway-Hours` | $36.22 | 805 hrs |
+| `Aurora:ServerlessV2Usage` | $26.10 | 402.58 ACU-hr |
+| `PublicIPv4:InUseAddress` | $4.03 | 805 hrs |
+| `Aurora:StorageIOUsage` | $2.03 | 10,163,829 IOs |
+| Secrets Manager + storage | $0.64 | — |
+
+402.58 ACU-hours over 805 wall-clock hours is a flat **0.50 average** — the
+`min_capacity` floor and nothing above it. Every demo run ever executed shows
+up as **$2.03 of storage IO**. Roughly **96% of the bill was infrastructure
+sitting idle**, and the NAT gateway plus its Elastic IP were 58% of it,
+billed hourly whether or not a byte moved.
+
+The NAT existed for one reason: ADR-005 put the Lambda inside the VPC (for
+production posture, per CLAUDE.md), and an in-VPC Lambda needs egress to
+reach Bedrock, SSM, and Secrets Manager.
+
+**Dead end worth recording: the RDS Data API.** The obvious fix is to pull
+Lambda out of the VPC and reach Aurora over the Data API instead. It is not
+available here, confirmed three ways:
+
+1. `modify-db-cluster --enable-http-endpoint` was accepted and **silently
+   ignored** — no pending modification was ever queued.
+2. A direct `rds-data execute-statement` returned
+   `HttpEndpointNotEnabledException`.
+3. `describe-db-engine-versions` shows **zero of 41** `aurora-postgresql`
+   versions in us-east-2 advertising `SupportsHttpEndpoint`.
+
+Not a version problem — Data API simply isn't offered for Aurora PostgreSQL
+in this region.
+
+**Decision.** Split the single Lambda into two whose network requirements are
+disjoint, then delete the NAT.
+
+```
+api       OUTSIDE the VPC   HTTP, Bedrock (parse + summarize), SSM,
+                            DynamoDB, CloudWatch ACU reads
+executor  INSIDE the VPC    Aurora only. No egress rule to the internet
+                            at all; DynamoDB via the free gateway endpoint
+```
+
+The executor authenticates to Postgres with **IAM database authentication**.
+`generate_db_auth_token` is local SigV4 signing — it makes **no network
+call** — which is the specific property that lets a Lambda in a private
+subnet with zero egress still authenticate. Without that, the executor would
+need a Secrets Manager interface endpoint at $7.20/mo and the savings would
+shrink.
+
+Also set `min_capacity = 0` (scale-to-zero), verified supported on 15.17.
+
+**Two consequences that improved the design rather than degrading it:**
+
+*Summarization became real.* The executor cannot reach Bedrock, so it ends a
+run at `status = "summarizing"` and the API Lambda writes the summary on the
+next poll. The UI's "Summarizing" step was previously a 700ms cosmetic delay;
+it now reflects actual work.
+
+*ACU sampling became more honest.* The executor previously polled CloudWatch
+once a second and stamped each metric row with the result — but CloudWatch
+publishes `ServerlessDatabaseCapacity` only once a minute, so ~59 of every 60
+rows carried a stale repeat presented as a fresh reading. The API Lambda now
+fetches the real series for a run's window and maps each row to its nearest
+datapoint. Same underlying data, without implying resolution that never
+existed.
+
+**Alternatives considered.**
+- **RDS Data API.** First choice; unavailable (see above).
+- **Three VPC interface endpoints** (SSM, Secrets Manager, Bedrock Runtime)
+  instead of NAT: ~$21.60/mo versus NAT's $40. Terraform-only, no app
+  changes — but it trades a $40 idle cost for a $22 idle cost rather than
+  removing it.
+- **One Secrets Manager interface endpoint** ($7.20/mo), keeping password
+  auth. Cheaper than NAT, but IAM auth removes the endpoint *and* the
+  long-lived password, so it wins on both axes.
+- **Passing DB credentials in the async invoke payload** to avoid any
+  Secrets Manager dependency. Rejected: credentials would transit an
+  invoke payload and could surface in logs — a regression against ADR-007.
+- **Destroy-when-idle only.** Genuinely reaches $0 and needs no code change,
+  but gives up the always-on demo URL. Complementary rather than
+  competing; still the right move between demo cycles.
+
+**Consequences.**
+- Idle cost drops from **~$60/mo to ~$0.60/mo** — Secrets Manager $0.40 plus
+  Aurora storage $0.20. Per-run cost is roughly $0.02.
+- Aurora now has **no network path to the internet whatsoever**. Deleting
+  the IGW and public subnets means it is unreachable by construction rather
+  than by security-group policy. Strictly better posture than v1.
+- Dropping `vpc_config` from the API Lambda removes ~1.6s of ENI cold start.
+- The executor has **no dead-letter queue**. SQS has no gateway endpoint, so
+  a DLQ would reintroduce the egress dependency. Its error surface is the
+  `RunRecord` it writes with `status = "workload_error"`, which the UI
+  already renders. Catastrophic failures (OOM, timeout) are visible in
+  CloudWatch Logs but not queued for replay.
+- X-Ray on the executor is `PassThrough`, not `Active` — the daemon posts
+  segments over the network it no longer has.
+- **This reverses ADR-005's "Lambda in VPC over Data API" stance for the
+  API tier**, but keeps it for the executor, which is where the interesting
+  networking actually lives.
+
+**Break-glass: re-running the `rds_iam` grant.** The bootstrap needs the
+master password from Secrets Manager, which the executor can no longer
+reach. If the grant is ever lost (cluster restore, dropped role):
+
+1. Set `enable_internet_egress = true` in the `vpc` module and apply — this
+   recreates the IGW, public subnets, and NAT in one step.
+2. Invoke the executor with `{"_ngx_bootstrap": true}`.
+3. Set the flag back to `false` and apply again.
+
+Roughly ten minutes of NAT charges, a few cents. The alternative — leaving a
+permanent Secrets Manager endpoint at $7.20/mo for an operation run once —
+costs more per year than a decade of break-glass events.
+
+**v1.5 migration path.** Raise the account's Lambda concurrency limit (it is
+**10**, not the usual 1000, because new accounts are throttled). Two
+functions sharing a 10-execution pool is fine for a single-user demo and is
+the first thing to break under real traffic.

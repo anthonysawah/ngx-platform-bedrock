@@ -107,17 +107,22 @@ Browser
   └─> CloudFront ─> S3 (private, OAC)            static UI
         UI calls API
   └─> API Gateway HTTP API                       CORS scoped to CloudFront
-        └─> Lambda (Python 3.12 / arm64, in VPC private subnets)
-              ├─> SSM Parameter Store           model id, cluster id, table name
-              ├─> Secrets Manager               AWS-managed Aurora master secret
-              ├─> Bedrock Runtime               Converse — intent parser + summary
-              ├─> Aurora Serverless v2 Postgres writer endpoint via psycopg
-              └─> DynamoDB                      run header + per-second metrics
+        └─> API Lambda  ── OUTSIDE the VPC ──    python3.12 / arm64
+              ├─> SSM Parameter Store            model id, cluster id, table name
+              ├─> Bedrock Runtime                Converse — intent parser + summary
+              ├─> CloudWatch                     ServerlessDatabaseCapacity series
+              ├─> DynamoDB                       run header + metric rows
+              └─> async invoke ▼
+                    Executor Lambda ── INSIDE the VPC, NO INTERNET ──
+                      ├─> Aurora Serverless v2   private IP, IAM auth token
+                      └─> DynamoDB               free gateway endpoint
 
-VPC: 10.20.0.0/16, 2 AZs, 2 public + 2 private subnets, single NAT.
-SGs:   Lambda → Aurora 5432 only; Lambda → 0.0.0.0/0 443 only (NAT).
-       Aurora ingress 5432 from Lambda SG only. No 0.0.0.0/0 ingress.
-Gateway endpoints: S3 + DynamoDB (free; off the NAT path).
+VPC: 10.20.0.0/16, 2 AZs, private subnets only.
+     No IGW. No NAT. No public subnets. Aurora is unreachable from the
+     internet by construction, not by policy.
+SGs: executor → Aurora 5432 only (no egress to 0.0.0.0/0 at all).
+     Aurora ← 5432 from the executor SG only.
+Gateway endpoints: S3 + DynamoDB (free, route-table based).
 ```
 
 [`DECISIONS.md`](DECISIONS.md) records every non-obvious choice with
@@ -131,8 +136,9 @@ reasoning and v1.5 migration paths.
 | ------------ | --------------------------------------------------------------------------- |
 | UI           | Static HTML + vanilla JS + Chart.js, served by CloudFront                   |
 | API          | API Gateway HTTP API ($default route → Lambda)                              |
-| Service      | Python 3.12 / FastAPI / Pydantic v2 / Mangum, on Lambda arm64               |
+| Service      | Python 3.12 / FastAPI / Pydantic v2 / Mangum, on Lambda arm64 (2 functions) |
 | Workload     | psycopg 3 + psycopg_pool (4–6 conns), 4 worker threads, 500-row executemany |
+| DB auth      | IAM database authentication — locally-signed token, no password at runtime  |
 | AI           | Bedrock Converse, Claude Sonnet 4.6 via inference profile (us.\*)           |
 | Database     | Aurora Serverless v2 Postgres 15.17, [AWS-managed master credentials](docs/screenshots/aurora-secret-managed.png) (ADR-007) |
 | Metrics      | DynamoDB on-demand, sparse GSI on status                                    |
@@ -269,17 +275,58 @@ Notes:
 
 ---
 
+## Cost
+
+The first real bill was **$69.02**, and reading it changed the architecture.
+
+| Usage type | Cost | What it actually was |
+| --- | ---: | --- |
+| NAT Gateway hours | $36.22 | the gateway existing, 805 hrs |
+| Aurora ACU-hours | $26.10 | 402.58 ACU-hr over 805 hrs = a flat **0.50 average** — the floor |
+| Public IPv4 address | $4.03 | the Elastic IP on the NAT |
+| Aurora storage IO | $2.03 | ← every demo run ever executed |
+| Secrets Manager + storage | $0.64 | |
+
+**96% was infrastructure sitting idle.** The demos themselves cost two dollars.
+
+The refactor in [ADR-013](DECISIONS.md) splits the Lambda in two so the half
+that needs the internet can live outside the VPC, which makes the NAT gateway
+unnecessary, and sets Aurora `min_capacity = 0` so an idle cluster bills
+nothing for compute.
+
+| | before | after |
+| --- | ---: | ---: |
+| Idle | ~$60/mo | **~$0.60/mo** |
+| Per demo run | ~$0.02 | ~$0.02 |
+
+The remaining $0.60 is Secrets Manager ($0.40, required by the cluster's
+managed master credentials) and Aurora storage ($0.20 for 2 GB of
+`workload_orders`). `terraform destroy` takes it to $0.
+
 ## Known limitations (v1)
 
 Honest list of where the demo's seams show. The same kind of detail
 is in the relevant ADRs.
 
 - **CloudWatch ACU metric is published at 1-minute granularity**
-  (ADR-008). Within a 60-second workload, the per-second ACU samples
-  on the chart are often the same value because no new datapoint has
-  been published yet. Longer runs (90–180s) reveal the actual scaling
-  curve. A "scaled live" run on the chart looks like a few step
-  changes, not a smooth ramp — that's CloudWatch, not Aurora.
+  (ADR-008). Longer runs (90–180s) reveal the actual scaling curve; a
+  "scaled live" chart shows a few step changes rather than a smooth
+  ramp. That's CloudWatch's publish cadence, not Aurora's behaviour.
+  The API Lambda fetches the real series and maps each metric row to
+  its nearest datapoint rather than pretending to per-second
+  resolution (ADR-013).
+- **Aurora scale-to-zero costs a cold start.** With `min_capacity = 0`
+  an idle cluster pauses; the first query after a pause waits ~15s for
+  resume. Warm it before a live demo.
+- **The account's Lambda concurrency limit is 10**, not the usual 1000
+  — new AWS accounts are throttled until the limit is raised. Two
+  functions sharing a 10-execution pool is fine for one user and is
+  the first thing that breaks under real traffic.
+- **The executor Lambda has no dead-letter queue.** SQS has no gateway
+  endpoint, so a DLQ would reintroduce the internet dependency the
+  refactor removed. Errors surface as a `workload_error` RunRecord,
+  which the UI renders; catastrophic failures appear in CloudWatch
+  Logs but are not queued for replay (ADR-013).
 - **`row_count` is a target, not a guarantee** (ADR-008). The executor
   honors `duration_seconds` as the hard cap; row_count is best-effort.
   Honest-clamping (ADR-011) clamps unrealistic asks at parse time so
