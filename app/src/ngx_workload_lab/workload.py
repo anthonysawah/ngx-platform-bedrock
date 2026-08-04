@@ -44,6 +44,14 @@ INSERT_BATCH_SIZE = 500
 POOL_MIN = 4
 POOL_MAX = 6
 
+# Aurora runs with min_capacity = 0 (ADR-013), so an idle cluster is *paused*
+# and the first connection has to wait for it to resume. Measured resume takes
+# well over psycopg_pool's 30s default and far over the 10s this used to use --
+# which failed every run whose cluster had gone to sleep. 120s is generous
+# enough to cover a cold resume without masking a genuinely unreachable
+# database, since the SG/route path would fail fast rather than hang.
+POOL_TIMEOUT_SECONDS = 120
+
 
 @dataclass
 class _SecondBucket:
@@ -159,7 +167,10 @@ class WorkloadExecutor:
             min_size=POOL_MIN,
             max_size=POOL_MAX,
             open=False,
-            timeout=10.0,
+            timeout=POOL_TIMEOUT_SECONDS,
+            # Don't give up on the first refused connection: a paused Aurora
+            # cluster refuses briefly before it finishes resuming.
+            reconnect_timeout=POOL_TIMEOUT_SECONDS,
         )
 
         self._buckets: dict[int, _SecondBucket] = defaultdict(_SecondBucket)
@@ -173,7 +184,11 @@ class WorkloadExecutor:
         self._flushed_seconds: set[int] = set()
 
     def open(self) -> None:
-        self.pool.open()
+        # wait=True blocks until min_size connections are actually established,
+        # so a paused cluster resumes here rather than mid-workload where it
+        # would skew the first seconds of metrics.
+        self.pool.open(wait=True, timeout=POOL_TIMEOUT_SECONDS)
+        logger.info("workload_pool_ready", table=self.spec.table_name)
         ensure_table(self.pool, self.spec.table_name)
 
     def close(self) -> None:

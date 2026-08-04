@@ -82,6 +82,21 @@ resource "aws_vpc_security_group_egress_rule" "executor_to_aurora" {
   referenced_security_group_id = var.aurora_security_group_id
 }
 
+# Gateway endpoints are route-table based, but egress still passes through
+# the SG. Without these rules the executor cannot reach DynamoDB at all --
+# which is exactly how this broke the first time. Scoped to the managed
+# prefix lists, so this grants AWS-service reachability, not internet access.
+resource "aws_vpc_security_group_egress_rule" "executor_to_gateway_endpoints" {
+  count = length(var.gateway_endpoint_prefix_list_ids)
+
+  security_group_id = aws_security_group.executor.id
+  description       = "S3/DynamoDB gateway endpoint (prefix list ${count.index})"
+  ip_protocol       = "tcp"
+  from_port         = 443
+  to_port           = 443
+  prefix_list_id    = var.gateway_endpoint_prefix_list_ids[count.index]
+}
+
 resource "aws_vpc_security_group_ingress_rule" "aurora_from_executor" {
   security_group_id            = var.aurora_security_group_id
   description                  = "Aurora Postgres from executor Lambda SG only."

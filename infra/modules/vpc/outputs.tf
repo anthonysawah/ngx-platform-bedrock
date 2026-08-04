@@ -32,3 +32,19 @@ output "nat_gateway_ids" {
   description = "NAT gateway IDs. Empty when enable_internet_egress is false (the default)."
   value       = aws_nat_gateway.this[*].id
 }
+
+output "gateway_endpoint_prefix_list_ids" {
+  description = <<-EOT
+    Managed prefix list IDs for the S3 and DynamoDB gateway endpoints.
+
+    Gateway endpoints are route-table based, but traffic to them still leaves
+    an instance/ENI through its security group -- so an SG with no matching
+    egress rule blocks them. Consumers need an egress rule on 443 to these
+    prefix lists. Using the prefix list rather than 0.0.0.0/0 keeps the
+    "no internet path" property intact.
+  EOT
+  value = [
+    aws_vpc_endpoint.s3.prefix_list_id,
+    aws_vpc_endpoint.dynamodb.prefix_list_id,
+  ]
+}

@@ -11,8 +11,6 @@ const TICK_INTERVAL_MS = 1000;
 // above starting. CloudWatch ACU is bucketed at 1-min granularity (ADR-008),
 // so anything below ~0.3 may just be normal sub-ACU jitter.
 const SCALE_TOAST_DELTA = 0.3;
-// Visual pause on the "Summarizing" pill so users see all four phases.
-const SUMMARIZE_FLASH_MS = 700;
 const TERMINAL_STATUSES = new Set([
   "complete",
   "bedrock_error",
@@ -87,9 +85,6 @@ form.addEventListener("submit", async (e) => {
     stopElapsedTimer();
 
     if (final.status === "complete") {
-      // Brief flash on "Summarizing" so all four phases are visible.
-      setPhase("summarize");
-      await sleep(SUMMARIZE_FLASH_MS);
       setPhase("complete");
       renderRunFinal(final);
       setStatus("complete", `Run ${runId.slice(0, 8)}… complete in ${elapsedSec(startedAt)}s.`);
@@ -115,6 +110,13 @@ async function pollUntilTerminal(runId, startedAt) {
     await sleep(POLL_INTERVAL_MS);
     const record = await api("GET", `/workloads/${runId}`);
     onPollTick(record);
+    // "summarizing" is a real backend state now, not a UI flourish: the
+    // executor has finished the workload but the API Lambda hasn't written
+    // the Bedrock summary yet (ADR-013). Reflect it in the stepper.
+    if (record.status === "summarizing") {
+      setPhase("summarize");
+    }
+
     if (TERMINAL_STATUSES.has(record.status)) {
       return record;
     }
