@@ -3,12 +3,13 @@ from __future__ import annotations
 import json
 from unittest.mock import Mock
 
+from unittest.mock import patch
+
 from ngx_workload_lab.workload import (
     _percentile,
-    build_dsn,
+    build_iam_auth_dsn,
     fetch_db_credentials,
     make_payload,
-    sample_current_acu,
 )
 
 
@@ -28,17 +29,34 @@ def test_make_payload_is_around_512_bytes_and_valid_json() -> None:
     assert 350 <= avg <= 800, f"unexpected avg payload size: {avg}"
 
 
-def test_build_dsn_url_encodes_special_chars() -> None:
-    dsn = build_dsn(
-        host="cluster.example.com",
-        port=5432,
-        dbname="workload",
-        username="admin",
-        password="p@ss/word#1",
-    )
-    assert dsn.startswith("postgresql://admin:p%40ss%2Fword%231@cluster.example.com:5432/workload")
+def test_build_iam_auth_dsn_signs_token_and_url_encodes_it() -> None:
+    """The DSN password is a signed IAM token, and tokens contain '&', '=' and
+    '/' from the SigV4 query string -- they must be URL-encoded or libpq
+    truncates the password at the first separator."""
+    raw_token = "host/?Action=connect&X-Amz-Signature=abc123&X-Amz-Expires=900"
+    fake_rds = Mock()
+    fake_rds.generate_db_auth_token.return_value = raw_token
+
+    with patch("ngx_workload_lab.workload.boto3.client", return_value=fake_rds):
+        dsn = build_iam_auth_dsn(
+            host="cluster.example.com",
+            port=5432,
+            dbname="workload",
+            username="workload_app",
+            region="us-east-2",
+        )
+
+    assert dsn.startswith("postgresql://workload_app:")
+    # raw separators must not survive into the DSN
+    assert "&X-Amz-Signature" not in dsn
+    assert "%26X-Amz-Signature" in dsn
+    assert "@cluster.example.com:5432/workload" in dsn
+    # IAM auth is rejected by RDS over plaintext
     assert "sslmode=require" in dsn
-    assert "application_name=ngx-workload-lab" in dsn
+
+    fake_rds.generate_db_auth_token.assert_called_once_with(
+        DBHostname="cluster.example.com", Port=5432, DBUsername="workload_app", Region="us-east-2"
+    )
 
 
 def test_fetch_db_credentials_reads_aws_managed_secret_shape() -> None:
@@ -51,25 +69,6 @@ def test_fetch_db_credentials_reads_aws_managed_secret_shape() -> None:
     secrets.get_secret_value.assert_called_once_with(
         SecretId="arn:aws:secretsmanager:...:secret:rds!cluster-abc-XYZ"
     )
-
-
-def test_sample_current_acu_returns_latest_value() -> None:
-    cw = Mock()
-    cw.get_metric_data.return_value = {"MetricDataResults": [{"Values": [1.5, 1.0, 0.5]}]}
-    assert sample_current_acu(cw, "cluster-id") == 1.5
-
-    args = cw.get_metric_data.call_args.kwargs
-    assert args["ScanBy"] == "TimestampDescending"
-    q = args["MetricDataQueries"][0]
-    assert q["MetricStat"]["Metric"]["Namespace"] == "AWS/RDS"
-    assert q["MetricStat"]["Metric"]["MetricName"] == "ServerlessDatabaseCapacity"
-    assert q["MetricStat"]["Metric"]["Dimensions"][0]["Value"] == "cluster-id"
-
-
-def test_sample_current_acu_returns_zero_when_no_datapoints() -> None:
-    cw = Mock()
-    cw.get_metric_data.return_value = {"MetricDataResults": [{"Values": []}]}
-    assert sample_current_acu(cw, "cluster-id") == 0.0
 
 
 def test_storage_normalize_handles_nested_floats() -> None:

@@ -9,6 +9,10 @@ WorkloadType = Literal["insert", "select", "mixed"]
 RunStatus = Literal[
     "pending",
     "running",
+    # Workload finished but the Bedrock summary is still pending. The
+    # executor Lambda has no internet, so the API Lambda finalizes on the
+    # next poll (ADR-013).
+    "summarizing",
     "complete",
     "bedrock_error",
     "workload_error",
