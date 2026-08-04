@@ -5,6 +5,11 @@ locals {
   # Reserve 0..7 for public, 8..15 for private. Plenty of room to grow.
   public_subnet_cidrs  = [for i in range(local.az_count) : cidrsubnet(var.vpc_cidr, 4, i)]
   private_subnet_cidrs = [for i in range(local.az_count) : cidrsubnet(var.vpc_cidr, 4, i + 8)]
+
+  # Public subnets exist only to host a NAT gateway. With egress disabled
+  # there is nothing to put in them, so they aren't created at all.
+  public_subnet_count = var.enable_internet_egress ? local.az_count : 0
+  nat_count           = var.enable_internet_egress ? (var.single_nat_gateway ? 1 : local.az_count) : 0
 }
 
 resource "aws_vpc" "this" {
@@ -17,7 +22,26 @@ resource "aws_vpc" "this" {
   }
 }
 
+# ---------------------------------------------------------------------------
+# Internet egress — disabled by default (ADR-013).
+#
+# The NAT gateway and its Elastic IP were $40/mo of a $60/mo bill, billed
+# hourly whether or not a single byte flowed. They existed so the in-VPC
+# Lambda could reach Bedrock, SSM, and Secrets Manager.
+#
+# After the API/executor split, nothing in this VPC needs the internet:
+#   * the executor Lambda authenticates to Aurora with a locally-signed IAM
+#     token (no Secrets Manager call) and reaches DynamoDB over the free
+#     gateway endpoint below
+#   * everything that does need public AWS APIs runs outside the VPC
+#
+# Flip enable_internet_egress back to true to restore NAT + IGW + public
+# subnets in one apply if a future workload needs egress again.
+# ---------------------------------------------------------------------------
+
 resource "aws_internet_gateway" "this" {
+  count = var.enable_internet_egress ? 1 : 0
+
   vpc_id = aws_vpc.this.id
 
   tags = {
@@ -26,7 +50,7 @@ resource "aws_internet_gateway" "this" {
 }
 
 resource "aws_subnet" "public" {
-  count = local.az_count
+  count = local.public_subnet_count
 
   vpc_id                  = aws_vpc.this.id
   cidr_block              = local.public_subnet_cidrs[count.index]
@@ -53,7 +77,7 @@ resource "aws_subnet" "private" {
 }
 
 resource "aws_eip" "nat" {
-  count = var.single_nat_gateway ? 1 : local.az_count
+  count = local.nat_count
 
   domain = "vpc"
 
@@ -65,7 +89,7 @@ resource "aws_eip" "nat" {
 }
 
 resource "aws_nat_gateway" "this" {
-  count = var.single_nat_gateway ? 1 : local.az_count
+  count = local.nat_count
 
   allocation_id = aws_eip.nat[count.index].id
   subnet_id     = aws_subnet.public[count.index].id
@@ -78,6 +102,8 @@ resource "aws_nat_gateway" "this" {
 }
 
 resource "aws_route_table" "public" {
+  count = var.enable_internet_egress ? 1 : 0
+
   vpc_id = aws_vpc.this.id
 
   tags = {
@@ -87,18 +113,22 @@ resource "aws_route_table" "public" {
 }
 
 resource "aws_route" "public_default" {
-  route_table_id         = aws_route_table.public.id
+  count = var.enable_internet_egress ? 1 : 0
+
+  route_table_id         = aws_route_table.public[0].id
   destination_cidr_block = "0.0.0.0/0"
-  gateway_id             = aws_internet_gateway.this.id
+  gateway_id             = aws_internet_gateway.this[0].id
 }
 
 resource "aws_route_table_association" "public" {
-  count = local.az_count
+  count = local.public_subnet_count
 
   subnet_id      = aws_subnet.public[count.index].id
-  route_table_id = aws_route_table.public.id
+  route_table_id = aws_route_table.public[0].id
 }
 
+# Private route tables always exist — they carry the gateway-endpoint routes
+# even when there is no default route out.
 resource "aws_route_table" "private" {
   count = var.single_nat_gateway ? 1 : local.az_count
 
@@ -111,7 +141,7 @@ resource "aws_route_table" "private" {
 }
 
 resource "aws_route" "private_default" {
-  count = var.single_nat_gateway ? 1 : local.az_count
+  count = local.nat_count
 
   route_table_id         = aws_route_table.private[count.index].id
   destination_cidr_block = "0.0.0.0/0"
@@ -125,9 +155,8 @@ resource "aws_route_table_association" "private" {
   route_table_id = var.single_nat_gateway ? aws_route_table.private[0].id : aws_route_table.private[count.index].id
 }
 
-# Gateway VPC endpoints — free, keep DDB and S3 traffic off the NAT.
-# Interface endpoints (SSM, Secrets Manager, Bedrock Runtime) are deferred
-# to v1.5; see DECISIONS.md ADR-005.
+# Gateway VPC endpoints — free, route-table attached, and the reason the
+# executor Lambda can reach DynamoDB with no internet path at all (ADR-005).
 
 data "aws_region" "current" {}
 

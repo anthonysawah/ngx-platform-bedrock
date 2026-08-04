@@ -44,7 +44,7 @@ module "aurora" {
   private_subnet_ids = module.vpc.private_subnet_ids
 
   engine_version = "15.17"
-  min_capacity   = 0.5
+  min_capacity   = 0
   max_capacity   = 4
 }
 
