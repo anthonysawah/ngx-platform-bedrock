@@ -93,11 +93,26 @@ note() { printf '  %s\n' "$1"; }
 ############################
 
 rule "Identity"
-if ! "$AWS_BIN" sts get-caller-identity --output table 2>/dev/null; then
-  echo "ERROR: AWS credentials are not valid in this shell." >&2
-  echo "       Run 'aws sso login' (or export a working profile) and retry." >&2
+if ! _sts_err="$("$AWS_BIN" sts get-caller-identity --output table 2>&1)"; then
+  # Surface the real error. "Unable to locate credentials" means nothing is
+  # configured; "ExpiredToken"/"token has expired" means an SSO or STS
+  # session lapsed; "InvalidClientTokenId" means the key itself is bad.
+  echo "ERROR: AWS credentials are not usable in this shell." >&2
+  echo >&2
+  printf '%s\n' "$_sts_err" | sed 's/^/       /' >&2
+  echo >&2
+  echo "  Diagnose with:" >&2
+  echo "    aws --version                 # needs v2" >&2
+  echo "    aws configure list            # which profile/creds are in effect" >&2
+  echo "    aws configure list-profiles   # what else is available" >&2
+  echo >&2
+  echo "  Then pick one:" >&2
+  echo "    aws sso login --profile <name>   # SSO session expired" >&2
+  echo "    export AWS_PROFILE=<name>        # credentials live in another profile" >&2
+  echo "    aws configure                    # nothing configured yet" >&2
   exit 1
 fi
+printf '%s\n' "$_sts_err"
 note "region=$REGION  window=$START_DATE..$END_DATE ($LOOKBACK_DAYS days)"
 
 ############################
