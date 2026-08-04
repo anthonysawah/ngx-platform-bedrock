@@ -42,6 +42,11 @@ ENV_DIR="$REPO_ROOT/infra/envs/$ENVIRONMENT"
 AWS_BIN="${AWS_BIN:-aws}"
 TF_BIN="${TF_BIN:-terraform}"
 
+# awscli v2 pipes output through a pager by default, which stops this script
+# dead at "(END)" after every section waiting for a keypress. This is a
+# report — it should stream.
+export AWS_PAGER=""
+
 PROJECT="${PROJECT:-ai-workload-lab}"
 NAME_PREFIX="$PROJECT-$ENVIRONMENT"
 REGION="${AWS_REGION:-us-east-2}"
