@@ -30,6 +30,11 @@ from ngx_workload_lab.models import (
 # event to Mangum (HTTP API path). See ADR-012.
 ASYNC_EVENT_KEY = "_ngx_async_workload"
 
+# One-time IAM database auth bootstrap (see bootstrap.py). Kept as a
+# maintenance path rather than a throwaway script: re-running it is how
+# you'd recover the rds_iam grant after a cluster restore.
+BOOTSTRAP_EVENT_KEY = "_ngx_bootstrap"
+
 # configure_logging() runs at package import (ngx_workload_lab/__init__.py)
 # so it lands BEFORE any submodule's module-level get_logger() — see the
 # comment in __init__.py for the cache_logger_on_first_use rationale.
@@ -343,10 +348,25 @@ _mangum_handler = Mangum(app, lifespan="off")
 def handler(event: Any, context: Any) -> Any:
     """Top-level Lambda entry point.
 
-    Dispatches between two event shapes:
+    Dispatches between three event shapes:
       - HTTP API events from API Gateway (handled by Mangum → FastAPI).
       - Self-invoked async events with ASYNC_EVENT_KEY (run the worker).
+      - One-time IAM bootstrap events with BOOTSTRAP_EVENT_KEY.
     """
+    if isinstance(event, dict) and event.get(BOOTSTRAP_EVENT_KEY):
+        from ngx_workload_lab import bootstrap
+
+        settings = get_settings()
+        creds = _db_credentials()
+        return bootstrap.run_bootstrap(
+            host=settings.aurora_cluster_endpoint,
+            port=settings.aurora_port,
+            dbname=settings.aurora_database_name,
+            master_user=creds["username"],
+            master_password=creds["password"],
+            region=settings.aws_region,
+        )
+
     if isinstance(event, dict) and event.get(ASYNC_EVENT_KEY):
         run_id = event["run_id"]
         spec = WorkloadSpec.model_validate(event["spec"])
