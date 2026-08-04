@@ -20,9 +20,11 @@ class Settings:
     aurora_cluster_identifier: str
     aurora_cluster_endpoint: str
     aurora_secret_arn: str
+    aurora_iam_db_user: str
     aurora_database_name: str
     aurora_port: int
     dynamodb_table_name: str
+    executor_function_name: str
     log_level: str
 
     @classmethod
@@ -34,9 +36,14 @@ class Settings:
             aurora_cluster_identifier=_required("AURORA_CLUSTER_IDENTIFIER"),
             aurora_cluster_endpoint=_required("AURORA_CLUSTER_ENDPOINT"),
             aurora_secret_arn=_required("AURORA_SECRET_ARN"),
+            # DB role granted rds_iam. Never the master user: that grant
+            # disables password auth for the role (see bootstrap.py).
+            aurora_iam_db_user=os.environ.get("AURORA_IAM_DB_USER", "workload_app"),
             aurora_database_name=_required("AURORA_DATABASE_NAME"),
             aurora_port=int(_required("AURORA_PORT")),
             dynamodb_table_name=_required("DYNAMODB_TABLE_NAME"),
+            # Empty in the executor Lambda, which never invokes anything.
+            executor_function_name=os.environ.get("EXECUTOR_FUNCTION_NAME", ""),
             log_level=os.environ.get("LOG_LEVEL", "INFO"),
         )
 

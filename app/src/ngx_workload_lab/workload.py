@@ -9,12 +9,14 @@ per ADR-008:
   - 4 worker threads sharing a connection pool of 4-6 connections (the
     cluster sees concurrent write pressure, not single-stream RPS).
   - duration_seconds is the hard cap; row_count is a target.
-  - starting_acu sampled at run start, peak_acu tracked across the run.
 
-ACU is read from CloudWatch metric `ServerlessDatabaseCapacity`. The
-metric is published at 1-minute granularity, so within a single 60-second
-demo we see at most one or two distinct values. The summary prompt
-narrates this honestly (per ADR-008).
+This module runs in the executor Lambda, which lives in a private subnet
+with NO internet path: no NAT, no interface endpoints. It therefore talks
+to exactly two things -- Aurora over a private IP (authenticated with a
+locally-signed IAM token, no Secrets Manager call) and DynamoDB over a
+free gateway endpoint. ACU sampling and Bedrock summarization both need
+the public AWS APIs, so they moved to the API Lambda (ADR-013).
+
 """
 
 from __future__ import annotations
@@ -29,6 +31,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+import boto3
 from psycopg_pool import ConnectionPool
 
 from ngx_workload_lab.logging_setup import get_logger
@@ -64,16 +67,25 @@ def fetch_db_credentials(secrets_client: Any, secret_arn: str) -> dict[str, str]
     return {"username": payload["username"], "password": payload["password"]}
 
 
-def build_dsn(*, host: str, port: int, dbname: str, username: str, password: str) -> str:
-    # libpq URI escaping: passwords with reserved chars need URL-encoding.
-    # AWS-managed secrets generate alphanumeric+symbols; safe to inline most,
-    # but we url-encode defensively.
+def build_iam_auth_dsn(*, host: str, port: int, dbname: str, username: str, region: str) -> str:
+    """Build a libpq DSN whose password is a freshly-signed RDS IAM token.
+
+    generate_db_auth_token is pure local SigV4 signing over the Lambda's
+    ambient role credentials -- it makes no network call. That is precisely
+    what allows this code to run with no NAT and no Secrets Manager
+    reachability. Tokens are valid ~15 minutes, which comfortably covers the
+    180s workload cap.
+
+    sslmode=require is mandatory: RDS rejects IAM auth over plaintext.
+    """
     from urllib.parse import quote
 
-    safe_user = quote(username, safe="")
-    safe_pass = quote(password, safe="")
+    token = boto3.client("rds", region_name=region).generate_db_auth_token(
+        DBHostname=host, Port=port, DBUsername=username, Region=region
+    )
     return (
-        f"postgresql://{safe_user}:{safe_pass}@{host}:{port}/{dbname}"
+        f"postgresql://{quote(username, safe='')}:{quote(token, safe='')}"
+        f"@{host}:{port}/{dbname}"
         f"?sslmode=require&application_name=ngx-workload-lab"
     )
 
@@ -125,39 +137,6 @@ def ensure_table(pool: ConnectionPool, table_name: str) -> None:
     logger.info("workload_table_ensured", table=table_name)
 
 
-def sample_current_acu(cloudwatch_client: Any, cluster_identifier: str) -> float:
-    """Read the most recent ServerlessDatabaseCapacity datapoint.
-
-    Returns 0.0 if no datapoint is available (e.g., very new cluster
-    before the first metric publish).
-    """
-    now = datetime.now(UTC)
-    response = cloudwatch_client.get_metric_data(
-        StartTime=now - timedelta(minutes=5),
-        EndTime=now,
-        ScanBy="TimestampDescending",
-        MetricDataQueries=[
-            {
-                "Id": "acu",
-                "MetricStat": {
-                    "Metric": {
-                        "Namespace": "AWS/RDS",
-                        "MetricName": "ServerlessDatabaseCapacity",
-                        "Dimensions": [
-                            {"Name": "DBClusterIdentifier", "Value": cluster_identifier}
-                        ],
-                    },
-                    "Period": 60,
-                    "Stat": "Average",
-                },
-                "ReturnData": True,
-            }
-        ],
-    )
-    values = response["MetricDataResults"][0].get("Values", [])
-    return float(values[0]) if values else 0.0
-
-
 class WorkloadExecutor:
     """Runs a `WorkloadSpec` to completion, capped by `duration_seconds`."""
 
@@ -167,18 +146,14 @@ class WorkloadExecutor:
         spec: WorkloadSpec,
         run_id: str,
         dsn: str,
-        cloudwatch_client: Any,
-        cluster_identifier: str,
         metric_sink: Any = None,
     ) -> None:
         # metric_sink: optional callable taking a single MetricSample and
-        # persisting it. The ACU sampler invokes it on each completed second
-        # so the live-streaming UI can poll partial results during the run.
-        # When None, metrics only land at the end via _collect_metrics().
+        # persisting it. The flusher thread invokes it on each completed
+        # second so the live-streaming UI can poll partial results during
+        # the run. When None, metrics only land at the end.
         self.spec = spec
         self.run_id = run_id
-        self.cluster_identifier = cluster_identifier
-        self.cloudwatch = cloudwatch_client
         self.pool = ConnectionPool(
             dsn,
             min_size=POOL_MIN,
@@ -192,10 +167,6 @@ class WorkloadExecutor:
         self._counter_lock = threading.Lock()
         self._total_inserted = 0
         self._total_selects = 0
-
-        self.starting_acu = 0.0
-        self.peak_acu = 0.0
-        self._latest_acu = 0.0
 
         self._metric_sink = metric_sink
         self._wallclock_start: datetime | None = None
@@ -215,12 +186,12 @@ class WorkloadExecutor:
     def __exit__(self, *exc: object) -> None:
         self.close()
 
-    def run(self) -> tuple[list[MetricSample], float, float, int, int]:
-        """Execute the workload. Returns (metrics, starting_acu, peak_acu, rows, selects)."""
-        self.starting_acu = sample_current_acu(self.cloudwatch, self.cluster_identifier)
-        self._latest_acu = self.starting_acu
-        self.peak_acu = self.starting_acu
+    def run(self) -> tuple[list[MetricSample], int, int]:
+        """Execute the workload. Returns (metrics, rows_inserted, selects_done).
 
+        ACU is deliberately absent: this Lambda has no route to CloudWatch.
+        The API Lambda overlays the ACU series at read time (ADR-013).
+        """
         start_monotonic = time.monotonic()
         deadline = start_monotonic + self.spec.duration_seconds
         wallclock_start = datetime.now(UTC)
@@ -232,7 +203,6 @@ class WorkloadExecutor:
             "workload_run_started",
             run_id=self.run_id,
             spec=self.spec.model_dump(),
-            starting_acu=self.starting_acu,
         )
 
         with ThreadPoolExecutor(max_workers=WORKER_COUNT + 1) as pool:
@@ -240,10 +210,10 @@ class WorkloadExecutor:
                 pool.submit(self._worker_loop, start_monotonic, deadline)
                 for _ in range(WORKER_COUNT)
             ]
-            sampler = pool.submit(self._acu_sampler_loop, start_monotonic, deadline)
+            flusher = pool.submit(self._flusher_loop, start_monotonic, deadline)
             for f in workers:
                 f.result()
-            sampler.result()
+            flusher.result()
 
         metrics = self._collect_metrics(wallclock_start)
 
@@ -252,10 +222,8 @@ class WorkloadExecutor:
             run_id=self.run_id,
             rows_inserted=self._total_inserted,
             selects_done=self._total_selects,
-            starting_acu=self.starting_acu,
-            peak_acu=self.peak_acu,
         )
-        return metrics, self.starting_acu, self.peak_acu, self._total_inserted, self._total_selects
+        return metrics, self._total_inserted, self._total_selects
 
     def _worker_loop(self, start_monotonic: float, deadline: float) -> None:
         rng = random.Random()
@@ -335,23 +303,14 @@ class WorkloadExecutor:
             cur.execute(sql)
             cur.fetchone()
 
-    def _acu_sampler_loop(self, start_monotonic: float, deadline: float) -> None:
-        # Sample once per second. CloudWatch publishes ServerlessDatabaseCapacity
-        # at 1-minute granularity, so consecutive samples will frequently match.
-        # Cheap to call ($0.01 / 1000 GetMetricData calls) — we tolerate the noise.
-        while time.monotonic() < deadline:
-            try:
-                acu = sample_current_acu(self.cloudwatch, self.cluster_identifier)
-                self._latest_acu = acu
-                if acu > self.peak_acu:
-                    self.peak_acu = acu
-            except Exception as e:
-                logger.warning("acu_sample_failed", error=str(e))
+    def _flusher_loop(self, start_monotonic: float, deadline: float) -> None:
+        """Persist each completed second's bucket while the run is still going.
 
+        Previously this thread also sampled ACU from CloudWatch; that moved to
+        the API Lambda when the executor lost its internet path (ADR-013).
+        """
+        while time.monotonic() < deadline:
             current_second = int(time.monotonic() - start_monotonic)
-            bucket = self._bucket(current_second)
-            with bucket.lock:
-                bucket.current_acu = self._latest_acu
 
             # Flush completed seconds to the metric sink so the UI's
             # poll loop can stream partial results before the run

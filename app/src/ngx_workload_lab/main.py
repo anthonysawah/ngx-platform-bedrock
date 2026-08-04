@@ -1,7 +1,30 @@
+"""API Lambda — everything that needs the public AWS APIs.
+
+Runs *outside* the VPC. Handles HTTP, calls Bedrock (both intent parsing and
+run summarization), reads/writes DynamoDB, and pulls the Aurora ACU series
+from CloudWatch. It never touches Postgres directly.
+
+The executor Lambda (executor.py) is the mirror image: inside the VPC, no
+internet, talks only to Aurora and DynamoDB. Splitting along that line is
+what let us delete the NAT gateway — 58% of the monthly bill (ADR-013).
+
+Run lifecycle across the two functions:
+
+    POST /workloads   (here)      parse intent via Bedrock, persist spec,
+                                  async-invoke the executor, return 202
+    executor.handler  (in VPC)    run the workload, stream per-second metrics,
+                                  set status = "summarizing"
+    GET  /workloads/{id} (here)   overlay the ACU series; if status is
+                                  "summarizing", call Bedrock, write the
+                                  summary, set status = "complete"
+
+That last step is why the UI's "Summarizing" phase is real work rather than
+a cosmetic delay.
+"""
+
 from __future__ import annotations
 
 import json
-import os
 import time
 import uuid
 from collections.abc import Awaitable, Callable
@@ -14,30 +37,13 @@ from fastapi import FastAPI, HTTPException, Request, Response
 from mangum import Mangum
 from structlog.contextvars import bind_contextvars, clear_contextvars
 
-from ngx_workload_lab import __version__, bedrock, storage, workload
+from ngx_workload_lab import __version__, acu, bedrock, storage
 from ngx_workload_lab.config import Settings
 from ngx_workload_lab.logging_setup import get_logger
-from ngx_workload_lab.models import (
-    RunRecord,
-    RunStatus,
-    WorkloadCreated,
-    WorkloadRequest,
-    WorkloadSpec,
-)
+from ngx_workload_lab.models import RunRecord, RunStatus, WorkloadCreated, WorkloadRequest
 
-# Sentinel field on async self-invocation events. The Lambda handler routes
-# to the worker path when this key is present, otherwise it forwards the
-# event to Mangum (HTTP API path). See ADR-012.
-ASYNC_EVENT_KEY = "_ngx_async_workload"
-
-# One-time IAM database auth bootstrap (see bootstrap.py). Kept as a
-# maintenance path rather than a throwaway script: re-running it is how
-# you'd recover the rds_iam grant after a cluster restore.
-BOOTSTRAP_EVENT_KEY = "_ngx_bootstrap"
-
-# configure_logging() runs at package import (ngx_workload_lab/__init__.py)
-# so it lands BEFORE any submodule's module-level get_logger() — see the
-# comment in __init__.py for the cache_logger_on_first_use rationale.
+# configure_logging() runs at package import (see __init__.py) so it lands
+# before any submodule's module-level get_logger().
 logger = get_logger("ngx_workload_lab")
 
 app = FastAPI(
@@ -60,11 +66,6 @@ def _bedrock_client() -> Any:
 
 
 @lru_cache(maxsize=1)
-def _secrets_client() -> Any:
-    return boto3.client("secretsmanager", region_name=get_settings().aws_region)
-
-
-@lru_cache(maxsize=1)
 def _cloudwatch_client() -> Any:
     return boto3.client("cloudwatch", region_name=get_settings().aws_region)
 
@@ -76,26 +77,8 @@ def _lambda_client() -> Any:
 
 @lru_cache(maxsize=1)
 def _runs_table() -> Any:
-    return boto3.resource("dynamodb", region_name=get_settings().aws_region).Table(
-        get_settings().dynamodb_table_name
-    )
-
-
-@lru_cache(maxsize=1)
-def _db_credentials() -> dict[str, str]:
-    return workload.fetch_db_credentials(_secrets_client(), get_settings().aurora_secret_arn)
-
-
-def _build_dsn() -> str:
     s = get_settings()
-    creds = _db_credentials()
-    return workload.build_dsn(
-        host=s.aurora_cluster_endpoint,
-        port=s.aurora_port,
-        dbname=s.aurora_database_name,
-        username=creds["username"],
-        password=creds["password"],
-    )
+    return boto3.resource("dynamodb", region_name=s.aws_region).Table(s.dynamodb_table_name)
 
 
 @app.middleware("http")
@@ -116,11 +99,7 @@ async def request_logging(
 
     latency_ms = round((time.perf_counter() - started) * 1000, 2)
     response.headers["x-request-id"] = request_id
-    logger.info(
-        "request_completed",
-        latency_ms=latency_ms,
-        status=response.status_code,
-    )
+    logger.info("request_completed", latency_ms=latency_ms, status=response.status_code)
     clear_contextvars()
     return response
 
@@ -130,11 +109,10 @@ async def health() -> dict[str, str]:
     return {"status": "ok", "version": __version__}
 
 
-# CORS preflight: API Gateway HTTP API CORS only auto-intercepts OPTIONS when
-# no route catches it. Our $default route catches everything (including
-# OPTIONS), so the preflight reaches Lambda — FastAPI 405s by default and the
-# browser rejects the preflight. Returning 204 here lets API GW's response
-# headers (allow-origin, allow-methods, allow-headers) pass through cleanly.
+# API Gateway HTTP API only auto-answers OPTIONS when no route catches it.
+# Our $default route catches everything, so preflight reaches Lambda and
+# FastAPI would 405 — which browsers reject. 204 lets API GW's CORS headers
+# through cleanly.
 @app.options("/{full_path:path}")
 async def cors_preflight(full_path: str) -> Response:
     return Response(status_code=204)
@@ -142,24 +120,15 @@ async def cors_preflight(full_path: str) -> Response:
 
 @app.post("/workloads", status_code=202)
 async def create_workload(req: WorkloadRequest) -> dict[str, Any]:
-    """Async kick-off. Parses intent synchronously (so a bad prompt still
-    returns 400 right away), persists a `running` RunRecord with the spec,
-    self-invokes the Lambda with InvocationType=Event to run the workload
-    out-of-band, and returns 202 + run_id immediately. UI polls
-    GET /workloads/{run_id} for status. See ADR-012.
-    """
+    """Parse intent synchronously, then hand the workload to the executor."""
     settings = get_settings()
     table = _runs_table()
     run_id = str(uuid.uuid4())
     now = datetime.now(UTC)
 
-    placeholder = RunRecord(
-        run_id=run_id,
-        status="pending",
-        created_at=now,
-        updated_at=now,
+    storage.put_run_header(
+        table, RunRecord(run_id=run_id, status="pending", created_at=now, updated_at=now)
     )
-    storage.put_run_header(table, placeholder)
 
     try:
         spec, parse_usage = bedrock.parse_intent(
@@ -182,9 +151,12 @@ async def create_workload(req: WorkloadRequest) -> dict[str, Any]:
             },
         ) from e
 
-    # Stash the user's verbatim text on the spec before persisting (ADR-011).
-    # Bedrock may have set `clamp_notes`; we never overwrite that here.
+    # Stash the user's verbatim text before persisting (ADR-011). Bedrock may
+    # have set clamp_notes; never overwrite that here.
     spec = spec.model_copy(update={"original_prompt": req.prompt})
+
+    if spec.clamp_notes:
+        logger.info("workload_clamped", run_id=run_id, clamp_notes=spec.clamp_notes)
 
     storage.update_run_header(
         table,
@@ -197,36 +169,30 @@ async def create_workload(req: WorkloadRequest) -> dict[str, Any]:
         },
     )
 
-    function_name = os.environ.get("AWS_LAMBDA_FUNCTION_NAME")
-    if not function_name:
-        # Local dev fallback: run synchronously inline. Lambda always sets this.
-        logger.warning("no_lambda_function_name_falling_back_to_inline_run")
-        _run_async_worker(run_id, spec, parse_usage)
-    else:
-        _lambda_client().invoke(
-            FunctionName=function_name,
-            InvocationType="Event",
-            Payload=json.dumps(
-                {
-                    ASYNC_EVENT_KEY: True,
-                    "run_id": run_id,
-                    "spec": spec.model_dump(),
-                    "parse_input_tokens": parse_usage.input_tokens,
-                    "parse_output_tokens": parse_usage.output_tokens,
-                }
-            ).encode(),
-        )
+    _lambda_client().invoke(
+        FunctionName=settings.executor_function_name,
+        InvocationType="Event",
+        Payload=json.dumps({"run_id": run_id, "spec": spec.model_dump()}).encode(),
+    )
 
     return WorkloadCreated(run_id=run_id, status="running", spec=spec).model_dump(mode="json")
 
 
 @app.get("/workloads/{run_id}")
 async def get_workload(run_id: str) -> dict[str, Any]:
-    record = storage.get_run(_runs_table(), run_id)
+    """Return the run, ACU overlaid, finalizing the summary if it's pending."""
+    table = _runs_table()
+    record = storage.get_run(table, run_id)
     if record is None:
         raise HTTPException(status_code=404, detail={"run_id": run_id, "error": "not found"})
 
-    metrics = storage.get_run_metrics(_runs_table(), run_id)
+    metrics = storage.get_run_metrics(table, run_id)
+    series = _acu_series_for(record)
+    metrics = acu.overlay_acu(metrics, series)
+
+    if record.status == "summarizing":
+        record = _finalize_run(table, record, metrics, series)
+
     payload = record.model_dump(mode="json")
     payload["metrics"] = [m.model_dump(mode="json") for m in metrics]
     return payload
@@ -234,147 +200,74 @@ async def get_workload(run_id: str) -> dict[str, Any]:
 
 @app.get("/workloads")
 async def list_workloads() -> dict[str, list[dict[str, Any]]]:
-    """Return up to the 20 most recent COMPLETE runs.
-
-    v1 keeps this simple — non-complete runs are still discoverable via
-    GET /workloads/{run_id}. v1.5 may surface in-progress and errored
-    runs via additional GSI queries.
-    """
+    """Up to the 20 most recent complete runs."""
     records = storage.list_recent_runs_by_status(_runs_table(), status="complete", limit=20)
     return {"runs": [r.model_dump(mode="json") for r in records]}
 
 
-# ---------- async worker path ----------
+# ---------- ACU overlay + summarization ----------
 
 
-def _run_async_worker(run_id: str, spec: WorkloadSpec, parse_usage: bedrock.BedrockUsage) -> None:
-    """Invoked via Lambda async self-invocation (or inline in local dev).
+def _acu_series_for(record: RunRecord) -> list[tuple[datetime, float]]:
+    """Pull the ACU series covering a run's window. Never fatal."""
+    start = record.started_at or record.created_at
+    end = record.completed_at or datetime.now(UTC)
+    try:
+        return acu.fetch_acu_series(
+            _cloudwatch_client(), get_settings().aurora_cluster_identifier, start, end
+        )
+    except Exception as e:
+        logger.warning("acu_series_fetch_failed", run_id=record.run_id, error=str(e))
+        return []
 
-    Runs the executor, persists per-second metrics, calls Bedrock for the
-    summary, and writes the final RunRecord. Errors land as a workload_error
-    RunRecord so the UI can show them.
+
+def _finalize_run(
+    table: Any,
+    record: RunRecord,
+    metrics: list[Any],
+    series: list[tuple[datetime, float]],
+) -> RunRecord:
+    """Write the Bedrock summary and flip the run to complete.
+
+    The executor cannot do this — Bedrock needs internet and the executor has
+    none. Runs sit in `summarizing` until the first poll lands here.
     """
+    starting_acu, peak_acu = acu.summarize_series(series)
     settings = get_settings()
-    table = _runs_table()
-    started = datetime.now(UTC)
-
-    storage.update_run_header(
-        table, run_id, status="running", updates={"started_at": started.isoformat()}
-    )
 
     try:
-        metrics, starting_acu, peak_acu, rows_completed, selects_completed = _run_executor(
-            spec, run_id, settings
-        )
-
-        storage.put_metric_samples(table, metrics)
-
-        summary, summary_usage = bedrock.summarize_run(
+        summary, usage = bedrock.summarize_run(
             _bedrock_client(),
             settings.bedrock_model_id,
-            spec,
+            record.spec,
             metrics,
             starting_acu,
             peak_acu,
         )
-        completed = datetime.now(UTC)
-
-        final_status: RunStatus = "complete"
-        storage.update_run_header(
-            table,
-            run_id,
-            status=final_status,
-            updates={
-                "completed_at": completed.isoformat(),
-                "rows_completed": rows_completed,
-                "selects_completed": selects_completed,
-                "starting_acu": starting_acu,
-                "peak_acu": peak_acu,
-                "summary": summary,
-                "bedrock_input_tokens": parse_usage.input_tokens + summary_usage.input_tokens,
-                "bedrock_output_tokens": parse_usage.output_tokens + summary_usage.output_tokens,
-            },
-        )
-        logger.info(
-            "workload_async_complete",
-            run_id=run_id,
-            rows=rows_completed,
-            selects=selects_completed,
-            starting_acu=starting_acu,
-            peak_acu=peak_acu,
-        )
     except Exception as e:
-        logger.exception("workload_async_failure", run_id=run_id)
+        logger.exception("summary_failed", run_id=record.run_id)
         storage.update_run_header(
-            table,
-            run_id,
-            status="workload_error",
-            updates={"error": str(e)[:512]},
+            table, record.run_id, status="bedrock_error", updates={"error": str(e)[:512]}
         )
+        return record.model_copy(update={"status": "bedrock_error", "error": str(e)[:512]})
+
+    final_status: RunStatus = "complete"
+    updates = {
+        "starting_acu": starting_acu,
+        "peak_acu": peak_acu,
+        "summary": summary,
+        "bedrock_input_tokens": (record.bedrock_input_tokens or 0) + usage.input_tokens,
+        "bedrock_output_tokens": (record.bedrock_output_tokens or 0) + usage.output_tokens,
+    }
+    storage.update_run_header(table, record.run_id, status=final_status, updates=updates)
+    logger.info(
+        "run_finalized",
+        run_id=record.run_id,
+        starting_acu=starting_acu,
+        peak_acu=peak_acu,
+        acu_datapoints=len(series),
+    )
+    return record.model_copy(update={"status": final_status, **updates})
 
 
-def _run_executor(
-    spec: WorkloadSpec, run_id: str, settings: Settings
-) -> tuple[list, float, float, int, int]:
-    dsn = _build_dsn()
-    table = _runs_table()
-
-    # The metric sink lets the ACU sampler thread persist each completed
-    # second's MetricSample as it lands, so the UI's poll loop can stream
-    # partial results during the run instead of seeing nothing until the
-    # workload finishes.
-    def metric_sink(sample: Any) -> None:
-        try:
-            storage.put_metric_samples(table, [sample])
-        except Exception as e:
-            logger.warning("metric_sink_failed", run_id=run_id, error=str(e))
-
-    with workload.WorkloadExecutor(
-        spec=spec,
-        run_id=run_id,
-        dsn=dsn,
-        cloudwatch_client=_cloudwatch_client(),
-        cluster_identifier=settings.aurora_cluster_identifier,
-        metric_sink=metric_sink,
-    ) as executor:
-        return executor.run()
-
-
-# ---------- Lambda handler dispatch ----------
-
-_mangum_handler = Mangum(app, lifespan="off")
-
-
-def handler(event: Any, context: Any) -> Any:
-    """Top-level Lambda entry point.
-
-    Dispatches between three event shapes:
-      - HTTP API events from API Gateway (handled by Mangum → FastAPI).
-      - Self-invoked async events with ASYNC_EVENT_KEY (run the worker).
-      - One-time IAM bootstrap events with BOOTSTRAP_EVENT_KEY.
-    """
-    if isinstance(event, dict) and event.get(BOOTSTRAP_EVENT_KEY):
-        from ngx_workload_lab import bootstrap
-
-        settings = get_settings()
-        creds = _db_credentials()
-        return bootstrap.run_bootstrap(
-            host=settings.aurora_cluster_endpoint,
-            port=settings.aurora_port,
-            dbname=settings.aurora_database_name,
-            master_user=creds["username"],
-            master_password=creds["password"],
-            region=settings.aws_region,
-        )
-
-    if isinstance(event, dict) and event.get(ASYNC_EVENT_KEY):
-        run_id = event["run_id"]
-        spec = WorkloadSpec.model_validate(event["spec"])
-        usage = bedrock.BedrockUsage(
-            input_tokens=int(event.get("parse_input_tokens", 0)),
-            output_tokens=int(event.get("parse_output_tokens", 0)),
-        )
-        _run_async_worker(run_id, spec, usage)
-        return {"ok": True}
-
-    return _mangum_handler(event, context)
+handler = Mangum(app, lifespan="off")
