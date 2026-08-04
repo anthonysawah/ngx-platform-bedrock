@@ -10,7 +10,7 @@
 #             authenticates to Postgres with a locally-signed IAM token.
 #
 # That split is what allowed the NAT gateway and its Elastic IP to be
-# deleted -- $40 of a $60/mo bill, billed hourly regardless of traffic.
+# deleted -- $36/mo of a measured ~$82/mo bill, billed hourly regardless of traffic.
 #
 # Both functions ship the same zip and differ only in handler entrypoint.
 

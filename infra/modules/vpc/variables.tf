@@ -36,8 +36,8 @@ variable "enable_internet_egress" {
     Create the IGW, public subnets, Elastic IP(s) and NAT gateway(s) that give
     private subnets a route to the internet.
 
-    Defaults to false. The NAT gateway plus its Elastic IP cost ~$40/mo billed
-    hourly regardless of traffic -- roughly two thirds of this project's bill --
+    Defaults to false. The NAT gateway plus its Elastic IP cost ~$36/mo billed
+    hourly regardless of traffic -- 44% of the measured ~$82/mo bill --
     and after the API/executor Lambda split nothing inside the VPC needs egress
     (ADR-013). Set true to restore it in one apply.
   EOT

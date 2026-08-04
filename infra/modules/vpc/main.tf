@@ -25,8 +25,8 @@ resource "aws_vpc" "this" {
 # ---------------------------------------------------------------------------
 # Internet egress — disabled by default (ADR-013).
 #
-# The NAT gateway and its Elastic IP were $40/mo of a $60/mo bill, billed
-# hourly whether or not a single byte flowed. They existed so the in-VPC
+# The NAT gateway and its Elastic IP were $36/mo of a measured ~$82/mo
+# bill, billed hourly whether or not a single byte flowed. They existed so the in-VPC
 # Lambda could reach Bedrock, SSM, and Secrets Manager.
 #
 # After the API/executor split, nothing in this VPC needs the internet:
