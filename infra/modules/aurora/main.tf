@@ -73,6 +73,12 @@ resource "aws_rds_cluster" "this" {
   vpc_security_group_ids          = [aws_security_group.cluster.id]
   port                            = 5432
 
+  # Enabled 2026-08-03 via modify-db-cluster during the ADR-013 refactor and
+  # codified here so a fresh apply matches the live cluster. Without this a
+  # from-scratch deploy provisions IAM auth OFF and the executor's token
+  # authentication fails outright.
+  iam_database_authentication_enabled = true
+
   storage_encrypted       = true
   backup_retention_period = var.backup_retention_days
   preferred_backup_window = "03:00-04:00"

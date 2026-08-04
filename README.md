@@ -8,9 +8,9 @@ in plain English in a web UI, and the platform:
    duration).
 2. Executes the workload **asynchronously** against an **Aurora Serverless
    v2 Postgres** cluster that auto-scales ACUs under load.
-3. Streams per-second metrics (rows/sec, p50/p95 latency, current ACU)
-   into **DynamoDB** as the workload runs; the UI polls and renders the
-   chart live.
+3. Streams per-second metrics (rows/sec, p50/p95 latency) into
+   **DynamoDB** as the workload runs; the API overlays the CloudWatch
+   ACU series at read time, and the UI polls and renders the chart live.
 4. Calls Bedrock a second time to write a plain-English summary of what
    actually happened — and is honest about it: "the cluster did not
    scale" when no scaling happened, and a yellow banner explains any

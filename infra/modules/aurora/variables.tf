@@ -30,14 +30,14 @@ variable "min_capacity" {
     Aurora Serverless v2 minimum ACUs.
 
     0 enables scale-to-zero: the cluster auto-pauses when idle and bills
-    nothing for compute until the next connection. That removed ~$23/mo of
-    idle spend here, since measured usage was 402 ACU-hours over 805 wall-clock
-    hours -- a flat 0.50 average, i.e. the floor and nothing above it.
+    nothing for compute until the next connection. That removed the idle
+    floor of ~$43.20/mo (measured steady state: 12 ACU-hours/day at
+    $0.12/ACU-hr — a flat 0.50 average, i.e. the floor and nothing above it).
 
     Requires Aurora PostgreSQL 13.15+/14.12+/15.7+/16.3+. Costs a ~15s cold
     start on the first query after a pause.
 
-    0.5 keeps the cluster permanently warm at ~$23/mo.
+    0.5 keeps the cluster permanently warm at ~$43/mo.
   EOT
   default     = 0
 
