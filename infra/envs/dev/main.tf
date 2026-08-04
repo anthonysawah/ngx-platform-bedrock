@@ -136,6 +136,8 @@ module "lambda_api" {
   aurora_cluster_arn         = module.aurora.cluster_arn
   aurora_cluster_resource_id = module.aurora.cluster_resource_id
 
+  gateway_endpoint_prefix_list_ids = module.vpc.gateway_endpoint_prefix_list_ids
+
   ssm_path_prefix = local.ssm_prefix
 
   bedrock_inference_profile_arn = local.bedrock_inference_profile_arn

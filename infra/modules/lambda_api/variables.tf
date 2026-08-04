@@ -145,3 +145,9 @@ variable "cors_allow_origins" {
   description = "Allowed Origin headers for the HTTP API CORS config. Default empty (no CORS); env composition passes the CloudFront domain in once static_site is created."
   default     = []
 }
+
+variable "gateway_endpoint_prefix_list_ids" {
+  type        = list(string)
+  description = "Managed prefix list IDs for the S3/DynamoDB gateway endpoints. The executor SG needs 443 egress to these; without it, gateway-endpoint traffic is dropped by the SG even though the route exists."
+  default     = []
+}
